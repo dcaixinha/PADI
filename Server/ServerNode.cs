@@ -185,7 +185,7 @@ namespace Server {
         public PadInt CreatePadInt(string clientPortAddress, int uid)
         {
             //verifica se o client tem 1 tx aberta
-            if (clients[clientPortAddress] == -1) return null;
+            if (clients[clientPortAddress] == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
             //hash do uid
             int hash = DstmUtil.HashMe(uid);
             //verifica quem eh o servidor responsavel
@@ -214,7 +214,7 @@ namespace Server {
                 return null;
         }
 
-        //Server-Server
+        //Server-Server TODO
         public PadInt CreatePadInt(int uid)
         {
             return null;
