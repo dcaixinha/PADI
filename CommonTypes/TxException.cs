@@ -4,11 +4,28 @@ using System.Text;
 
 namespace DSTM
 {
-    public class TxException : Exception
+    [Serializable]
+    public class TxException : ApplicationException
     {
-        public TxException(string info) : base(info) //TODO quando lancar?
-        {
+            public string reason;
 
-        } 
+            public TxException(string c)
+            {
+                reason = c;
+            }
+
+            public TxException(System.Runtime.Serialization.SerializationInfo info,
+                System.Runtime.Serialization.StreamingContext context)
+                : base(info, context)
+            {
+                reason = info.GetString("reason");
+            }
+
+            public override void GetObjectData(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context)
+            {
+                base.GetObjectData(info, context);
+                info.AddValue("reason", reason);
+            }
+        
     }
 }

@@ -83,6 +83,11 @@ namespace Client
             {
                 throw new Exception("Falhou a tentar começar uma Tx!");
             }
+            catch (TxException e)
+            {
+                Console.WriteLine(e.reason);
+                return false;
+            }
         }
 
         //Creates a new shared object with the given uid. Returns null if the object already exists.

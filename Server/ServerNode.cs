@@ -96,7 +96,7 @@ namespace Server {
 
         public string GetAddress() { return myself; }
 
-        //Response from Master after successful registration
+        //ServerNode updates this object
         public void UpdateServerList(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
         {
             this.servers = servers;
