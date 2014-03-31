@@ -40,15 +40,16 @@ namespace Master {
             Broadcast(message);
         }
 
-        public void RegisterServer(string serverAddrPort)
+        public SortedDictionary<int, ServerInfo> RegisterServer(string serverAddrPort)
         {
             if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
             {
                 roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
                 DstmUtil.InsertServer(serverAddrPort, servers);
-                SendDictionary(serverAddrPort, servers);
-                numServers++;
+
+                return servers;
             }
+            return null;
         }
 
         public int getTxId()
@@ -64,8 +65,8 @@ namespace Master {
             return serverAddrPort;
         }
 
-        //Metodo interno, que obtem os objectos remotos de cada servidor, para invocar
-        //neles um metodo que vai conter a resposta do master (excepto no que enviou)
+        //Metodo interno, que obtem invoca nos objectos remotos de cada servidor,
+        //um metodo que vai conter a resposta do master (excepto no que enviou)
         private void Broadcast(string msg)
         {
             foreach (ServerInfo sInfo in servers.Values)
@@ -80,20 +81,6 @@ namespace Master {
             }
         }
 
-        //Metodo interno que envia a conversa anterior para um servidor que acaba
-        //de se registar
-        private void SendDictionary(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
-        {
-            IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster), 
-                "tcp://" + serverAddrPort + "/Server");
-            try
-            {
-                serv.UpdateServerList(serverAddrPort, servers);
-                if(text != "")
-                    serv.Update(text);
-            }
-            catch (Exception e) { Console.WriteLine(e); }
-        }
     }
 
 }

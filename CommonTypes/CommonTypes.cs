@@ -42,9 +42,6 @@ namespace DSTM
 
     public interface IServerMaster
     {
-        //Master responde ao registo do servidor com a lista dos servidores
-        void UpdateServerList(string serverAddrPort, SortedDictionary<int, ServerInfo> servers);
-
         //Master envia updates para o servidor
         void Update(string message);
 
@@ -53,7 +50,7 @@ namespace DSTM
     public interface IMasterServer
     {
         void Send(string message);
-        void RegisterServer(string port);
+        SortedDictionary<int, ServerInfo> RegisterServer(string port);
         int getTxId();
     }
 

@@ -14,34 +14,37 @@ namespace Server {
         //Constants
         public static string masterAddrPort = "localhost:8086";
 
+        SortedDictionary<int, ServerInfo> servers;
         IMasterServer masterObj;
         string address = DstmUtil.LocalIPAddress();
         string porto;
         string myself;
-        private Boolean unregistered = true; //register operation idempotent
+        Server serv; //O seu objecto remoto
 
         public void Register(string porto){
-            if (unregistered)
-            {
-                //Cria o seu canal nesse porto
-                TcpChannel channel = new TcpChannel(Convert.ToInt32(porto));
-                ChannelServices.RegisterChannel(channel, false);
 
-                //Instancia o seu objecto remoto, atraves do qual o master lhe envia respostas e o client pedidos
-                RemotingConfiguration.RegisterWellKnownServiceType(typeof(Server),
-                    "Server", WellKnownObjectMode.Singleton);
+            //Cria o seu canal nesse porto
+            TcpChannel channel = new TcpChannel(Convert.ToInt32(porto));
+            ChannelServices.RegisterChannel(channel, false);
 
-                //Obtem o objecto remoto do master bem conhecido
-                masterObj = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
-                    "tcp://" + masterAddrPort + "/Master");
+            //Instancia o seu objecto remoto, atraves do qual o master lhe envia respostas e o client pedidos
+            //RemotingConfiguration.RegisterWellKnownServiceType(typeof(Server),
+            //    "Server", WellKnownObjectMode.Singleton);
+            serv = new Server(); 
+            RemotingServices.Marshal(serv, "Server", typeof(Server) ); 
 
-                this.porto = porto;
-                this.myself = address + ":" + porto;
-                //O servidor regista-se no master
-                masterObj.RegisterServer(myself);
+            //Obtem o objecto remoto do master bem conhecido
+            masterObj = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
+                "tcp://" + masterAddrPort + "/Master");
 
-                unregistered = false; //torna esta operacao segura (idempotente) evita excepcoes
-            }
+            this.porto = porto;
+            this.myself = address + ":" + porto;
+
+            //O servidor regista-se no master
+            servers = masterObj.RegisterServer(myself);
+            //Actualiza o seu objecto remoto
+            serv.UpdateServerList(myself, servers);
+
         }
 
         public void Send(string msg)
