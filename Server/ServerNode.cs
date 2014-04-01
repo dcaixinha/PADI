@@ -92,6 +92,10 @@ namespace Server {
     {
         private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
+        private SortedDictionary<int, PadInt> list = new SortedDictionary<int, PadInt>();
+
+        //<txId, dicionario< uid, PadIntProxy >
+        private SortedDictionary<int, SortedDictionary<int, PadInt>> txList = new SortedDictionary<int, SortedDictionary<int, PadInt>>();
         private string myself;
 
         public string GetAddress() { return myself; }
@@ -179,6 +183,7 @@ namespace Server {
                     "tcp://" + ServerNode.masterAddrPort + "/Master");
                 int id = master.getTxId();
                 clients[clientPortAddress] = id; //update tx ID for this client
+                txList.Add(clients[clientPortAddress], new SortedDictionary<int,PadInt>());
                 DstmUtil.ShowClientsList(clients);
                 return true;
             }
@@ -205,22 +210,33 @@ namespace Server {
                         result = serv.CreatePadInt(uid);
                     }
                     catch (Exception e) { Console.WriteLine(e); }
-
-                    return result;
                 }
                 else //o proprio eh o responsavel
                 {
-                    return CreatePadInt(uid); 
+                    result = CreatePadInt(uid); 
                 }
+                //Nao deve envaiar a referencia remota do padint criado
+                //Deve criar 1 obejcto proxy local a este servidor
+
+                //Actualiza a lista de objectos proxy, na lista de txs: Add( txId, proxyPadint)
+                txList[clients[clientPortAddress]].Add(uid, new PadInt(uid)); //este eh um proxy
+
+                return result;
             }
             else
-                return null;
+                return null; //Nao deve acontecer...
         }
 
         //Server-Server TODO
         public PadInt CreatePadInt(int uid)
         {
-            return null;
+            //Verifica se o padint ja existe
+            if (list.ContainsKey(uid))
+                throw new TxException("PadInt with id '" + uid.ToString() + "' already exists!");
+
+            PadInt novo = new PadInt(uid);
+            list.Add(uid, novo);
+            return novo;
         }
 
     }
