@@ -73,6 +73,7 @@ namespace DSTM
             return count != servers.Count;
         }
 
+        //Devolve o address:port do servidor responsavel pelo objecto com a hashedUid dada
         public static string GetResponsibleServer(SortedDictionary<int, ServerInfo> servers, int hashedUid)
         {
             foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)

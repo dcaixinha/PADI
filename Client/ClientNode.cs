@@ -72,6 +72,7 @@ namespace Client
         }
 
         //TX BEGIN
+        /// <exception cref="TxException"></exception>
         public bool TxBegin()
         {
             try
@@ -85,7 +86,7 @@ namespace Client
             }
             catch (TxException e)
             {
-                Console.WriteLine(e.reason);
+                Console.WriteLine("TxException: " + e.reason);
                 return false;
             }
         }
@@ -93,10 +94,29 @@ namespace Client
         //Creates a new shared object with the given uid. Returns null if the object already exists.
         public PadInt CreatePadInt(int uid)
         {
-            PadInt result = serverObj.CreatePadInt(myself, uid);
-            return result;
+            try
+            {
+                PadInt result = serverObj.CreatePadInt(myself, uid);
+                return result;
+            }
+            catch (TxException) { }
+            return null;
+
         }
 
+        //Returns a reference to a shared object with the given uid. Returns null if the object does not exist.
+        public PadInt AccessPadInt(int uid)
+        {
+            try
+            {
+                PadInt result = serverObj.AccessPadInt(myself, uid);
+                return result;
+            }
+            catch (TxException) { }
+            return null;
+        }
+
+        //Chat
         public void Send(string msg)
         {
             try

@@ -100,6 +100,7 @@
     <Compile Include="DstmUtil.cs" />
     <Compile Include="Murmur3.cs" />
     <Compile Include="PadInt.cs" />
+    <Compile Include="PadIntInsider.cs" />
     <Compile Include="ServerInfo.cs" />
     <Compile Include="TxException.cs" />
   </ItemGroup>

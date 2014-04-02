@@ -30,6 +30,7 @@ namespace DSTM
         bool TxBegin(string clientPortAddress);
 
         PadInt CreatePadInt(string clientPortAddress, int uid);
+        PadInt AccessPadInt(string clientPortAddress, int uid);
 
     }
 
@@ -37,7 +38,8 @@ namespace DSTM
     {
         //outro servidor envia updates com a topologia da rede
         void UpdateNetwork(string serverAddrPort);
-        PadInt CreatePadInt(int uid);
+        PadIntInsider CreatePadInt(int uid);
+        PadIntInsider AccessPadInt(int uid);
     }
 
     public interface IServerMaster

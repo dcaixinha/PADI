@@ -1,36 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
-
-using System.Runtime.Serialization;
-using System.Runtime.Serialization.Formatters.Binary;
+using System.Threading.Tasks;
 
 namespace DSTM
 {
+    //Classe proxy que faz a interaçao entre o client e o coordenador
     public class PadInt
     {
-        private int uid;
-        private int val;
-
-        public PadInt(int uid)
+        private string coordinatorAddressPort;
+        public PadInt(string addrPort)
         {
-            this.uid = uid;
+            coordinatorAddressPort = addrPort;
         }
 
-        //public int getUid() { return uid; }
-        //public int getValue() { return value; }
-        //public void setValue(int value) { this.value = value; }
-
-        public int Value
+        //Metodos usados pelo cliente:
+        public int Read()
         {
-            get { return val; }
-            set { val = value; }
+            //TODO faz 1 pedido de read ao coord
+            return -1;
         }
-
-        public int UID
+        public void Write(int value)
         {
-            get { return uid; }
+            //TODO faz 1 pedido de read ao coord
         }
-
     }
 }
