@@ -308,9 +308,32 @@ namespace Server {
         }
 
         //Client-Server
-        public void Write(int uid, string clientAddrPort, int value)
+        public void Write(int uid, string clientAddressPort, int value)
         {
+            //verifica se o client tem 1 tx aberta
+            int txId = clients[clientAddressPort];
+            if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
 
+            //verifica quem eh o servidor responsavel (o hash eh feito la dentro do metodo)
+            string responsible = DstmUtil.GetResponsibleServer(servers, uid);
+
+            if (responsible == null)
+                throw new TxException("There was no server responsible for this uid!"); //Nao deve acontecer...
+
+            if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
+            {
+                try
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + responsible + "/Server");
+                    serv.Write(uid, txId, value);
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+            else //o proprio eh o responsavel
+            {
+                Write(uid, txId, value);
+            }
         }
 
 
@@ -346,16 +369,21 @@ namespace Server {
 
         //Server-Server
         public int Read(int uid, int txId) {
-            //check if committed timestamp is lower
-
-            //check if tentative timestamp is lower, if so wait and reapply the rule
-
-            //otherwise read from committed, and write a tentative read with this txid
-            return -1;
+            //search for the padint
+            PadIntInsider padint;
+            myPadInts.TryGetValue(uid, out padint);
+            int result = padint.Read(txId);
+            return result;
         }
 
         //Server-Server
-        public void Write(int uid, int txId) { }
+        public void Write(int uid, int txId, int value) {
+            //search for the padint
+            PadIntInsider padint;
+            myPadInts.TryGetValue(uid, out padint);
+            padint.Write(txId, value);
+            //returns immediately?
+        }
 
     }
 

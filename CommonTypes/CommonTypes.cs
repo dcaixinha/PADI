@@ -43,7 +43,7 @@ namespace DSTM
         void CreatePadInt(int uid);
         void AccessPadInt(int uid);
         int Read(int uid, int txId);
-        void Write(int uid, int txId);
+        void Write(int uid, int txId, int value);
     }
 
     public interface IServerMaster

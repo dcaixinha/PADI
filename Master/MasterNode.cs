@@ -52,7 +52,7 @@ namespace Master {
 
         public int getTxId()
         {
-            return txIdCounter++;
+            return ++txIdCounter;
         }
 
         //Client calls this to bootstrap himself and get a server
