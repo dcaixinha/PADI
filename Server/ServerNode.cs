@@ -63,6 +63,8 @@ namespace Server {
         {
             ServerNode sn = new ServerNode();
             string input;
+            Console.WriteLine("Commands:");
+            Console.WriteLine("register <port>");
             while (true)
             {
                 input = Console.ReadLine();
@@ -79,7 +81,7 @@ namespace Server {
                             "' is invalid!\r\nTry a port between 1025 and 65535");
                     }
                     else
-                        Console.WriteLine("Wrong command format. User 'register <port>'");
+                        Console.WriteLine("Wrong command format. Use 'register <port>'");
                 }
                 else 
                     sn.Send(input);
@@ -94,13 +96,16 @@ namespace Server {
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         private SortedDictionary<int, PadIntInsider> myPadInts = new SortedDictionary<int, PadIntInsider>(); //uid, padint
 
-        //Lista de objectos remotos<txId, dicionario< uid, PadIntProxy >
-        private SortedDictionary<int, SortedDictionary<int, PadIntInsider>> txList = new SortedDictionary<int, SortedDictionary<int, PadIntInsider>>();
+        // Lista de objectos por tx (coordenador) <txId, dicionario< uid, PadInt >
+        // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit
+        // TODO: aqui bastava guardar os uids usados em cada tx, n eh preciso os PadInt remotos...
+        // TODO: alias... basta guardar os endereços dos servidores que têm objectos desta tx... para os contactar
+        private SortedDictionary<int, List<string>> txList = new SortedDictionary<int, List<string>>();
         private string myself;
 
         public string GetAddress() { return myself; }
 
-        //ServerNode updates this object
+        //ServerNode updates this object after successful registration with master
         public void UpdateServerList(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
         {
             this.servers = servers;
@@ -171,118 +176,148 @@ namespace Server {
         }
 
         //Client-Server
-        public bool TxBegin(string clientPortAddress)
-        {
+        public bool TxBegin(string clientAddressPort)
+        { 
             //Se o cliente ja tem 1 tx a decorrer
-            if (!clients.ContainsKey(clientPortAddress) || clients[clientPortAddress] != -1)
+            if (!clients.ContainsKey(clientAddressPort) || clients[clientAddressPort] != -1)
                 return false;
             else
             {
                 //Contacta o master para obter um txId
                 IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
                     "tcp://" + ServerNode.masterAddrPort + "/Master");
-                int id = master.getTxId();
-                clients[clientPortAddress] = id; //update tx ID for this client
-                txList.Add(clients[clientPortAddress], new SortedDictionary<int,PadIntInsider>());
+                int txId = master.getTxId();
+                clients[clientAddressPort] = txId; //update tx ID for this client
+                txList.Add(txId, new List<string>());
                 DstmUtil.ShowClientsList(clients);
                 return true;
             }
         }
 
         //Client-Server
-        public PadInt CreatePadInt(string clientPortAddress, int uid)
+        public PadInt CreatePadInt(string clientAddressPort, int uid)
         {
             //verifica se o client tem 1 tx aberta
-            int txId = clients[clientPortAddress];
+            int txId = clients[clientAddressPort];
             if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
-            //hash do uid
-            int hash = DstmUtil.HashMe(uid);
-            //verifica quem eh o servidor responsavel
+
+            //verifica quem eh o servidor responsavel (o hash eh feito la dentro do metodo)
             string responsible = DstmUtil.GetResponsibleServer(servers, uid);
-            PadIntInsider padint = null;
 
-            if (responsible != null)
-            {
-                if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
-                {                     
-                    try
-                    {   IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                            "tcp://" + responsible + "/Server");
-                        padint = serv.CreatePadInt(uid);
-                    }
-                    catch (Exception e) { Console.WriteLine(e); }
-                }
-                else //o proprio eh o responsavel
-                {
-                    padint = CreatePadInt(uid); 
-                }
-                //Nao deve enviar a referencia remota do padint criado
-                //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
-                //o responsavel pelo padint ou ter sido outro que devolveu a este uma referencia remota! O cliente
-                //nao lida directamente com a referencia remota.
-                //Portanto, o coordenador fica com esta ref remota, e envia um proxy ao cliente.
-
-
-                //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
-                txList[txId].Add(uid, padint);
-                //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
-                PadInt proxy = new PadInt(myself);
-                return proxy;
-            }
-            else
+            if (responsible == null)
                 return null; //Nao deve acontecer...
+
+            if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
+            {                     
+                try
+                {   IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + responsible + "/Server");
+                    serv.CreatePadInt(uid);
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+            else //o proprio eh o responsavel
+            {
+                CreatePadInt(uid); 
+            }
+            //Nao deve enviar a referencia remota do padint criado
+            //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
+            //o responsavel pelo padint ou ter sido outro que devolveu a este uma referencia remota! O cliente
+            //nao lida directamente com a referencia remota.
+            //Portanto, o coordenador fica com esta ref remota, e envia um proxy ao cliente.
+
+
+            //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
+            txList[txId].Add(responsible);
+            //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
+            PadInt proxy = new PadInt(myself, clientAddressPort, uid);
+            return proxy;             
         }
 
 
         //Client-Server
-        public PadInt AccessPadInt(string clientPortAddress, int uid)
+        public PadInt AccessPadInt(string clientAddressPort, int uid)
         {
             //verifica se o client tem 1 tx aberta
-            int txId = clients[clientPortAddress];
+            int txId = clients[clientAddressPort];
             if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
-            //hash do uid
-            int hash = DstmUtil.HashMe(uid);
-            //verifica quem eh o servidor responsavel
+
+            //returns the portAddress of the server responsible for that uid
             string responsible = DstmUtil.GetResponsibleServer(servers, uid);
-            PadIntInsider padint = null;
 
-            if (responsible != null)
-            {
-                if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
-                {
-                    try
-                    {
-                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                            "tcp://" + responsible + "/Server");
-                        padint = serv.AccessPadInt(uid);
-                    }
-                    catch (Exception e) { Console.WriteLine(e); }
-                }
-                else //o proprio eh o responsavel
-                {
-                    padint = AccessPadInt(uid);
-                }
-                //Nao deve enviar a referencia remota do padint criado
-                //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
-                //o responsavel pelo padint ou ter sido outro que devolveu a este uma referencia remota! O cliente
-                //nao lida directamente com a referencia remota.
-                //Portanto, o coordenador fica com esta ref remota, e envia um proxy ao cliente.
-
-                //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
-                txList[txId].Add(uid, padint); 
-                //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
-                PadInt proxy = new PadInt(myself);
-                return proxy;
-            }
-            else
+            if (responsible == null)
                 return null; //Nao deve acontecer...
+          
+            if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
+            {
+                try
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + responsible + "/Server");
+                    serv.AccessPadInt(uid);
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+            else //o proprio eh o responsavel
+            {
+                AccessPadInt(uid);
+            }
+            //Nao deve enviar a referencia remota do padint criado
+            //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
+            //o responsavel pelo padint ou outro qualquer! 
+            //Portanto, o coordenador fica com esta ref remota (uid), e envia um proxy ao cliente.
+
+            //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
+            txList[txId].Add(responsible); 
+            //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
+            PadInt proxy = new PadInt(myself, clientAddressPort, uid);
+            return proxy;
+            
+                
+        }
+
+        //Client-Server
+        public int Read(int uid, string clientAddressPort)
+        {
+            //verifica se o client tem 1 tx aberta
+            int txId = clients[clientAddressPort];
+            if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
+
+            //verifica quem eh o servidor responsavel (o hash eh feito la dentro do metodo)
+            string responsible = DstmUtil.GetResponsibleServer(servers, uid);
+            int value = -1;
+
+            if (responsible == null)
+                throw new TxException("There was no server responsible for this uid!"); //Nao deve acontecer...
+
+            if (!responsible.Equals(myself)) //Se nao eh o prorio, procura o servidor correcto
+            {
+                try
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + responsible + "/Server");
+                    value = serv.Read(uid, txId);
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+            else //o proprio eh o responsavel
+            {
+                value = Read(uid, txId);
+            }
+            return value;
+        }
+
+        //Client-Server
+        public void Write(int uid, string clientAddrPort, int value)
+        {
+
         }
 
 
         //Server-Server
         //So o servidor responsavel pelo padint vai correr este metodo
-        //Se o coordenador for ele proprio o responsavel, entao este corre este metodo localmente
-        public PadIntInsider CreatePadInt(int uid)
+        //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
+        public void CreatePadInt(int uid)
         {
             //Verifica se o padint ja existe
             if (myPadInts.ContainsKey(uid))
@@ -290,26 +325,37 @@ namespace Server {
 
             PadIntInsider novo = new PadIntInsider(uid);
             myPadInts.Add(uid, novo);
-            return novo;
         }
 
         //Server-Server
         //So o servidor responsavel pelo padint vai correr este metodo
-        //Se o coordenador for ele proprio o responsavel, entao este corre este metodo localmente
-        public PadIntInsider AccessPadInt(int uid)
+        //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
+        public void AccessPadInt(int uid)
         {
             //Verifica se o padint ja existe
             if (myPadInts.ContainsKey(uid))
             {
                 PadIntInsider novo;
                 myPadInts.TryGetValue(uid, out novo);
-                return novo;
             }
             else
                 throw new TxException("PadInt with id '" + uid.ToString() + "' doesn't exist!");
 
 
         }
+
+        //Server-Server
+        public int Read(int uid, int txId) {
+            //check if committed timestamp is lower
+
+            //check if tentative timestamp is lower, if so wait and reapply the rule
+
+            //otherwise read from committed, and write a tentative read with this txid
+            return -1;
+        }
+
+        //Server-Server
+        public void Write(int uid, int txId) { }
 
     }
 

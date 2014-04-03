@@ -73,9 +73,10 @@ namespace DSTM
             return count != servers.Count;
         }
 
-        //Devolve o address:port do servidor responsavel pelo objecto com a hashedUid dada
-        public static string GetResponsibleServer(SortedDictionary<int, ServerInfo> servers, int hashedUid)
+        //Devolve o address:port do servidor responsavel pelo objecto com a uid dada
+        public static string GetResponsibleServer(SortedDictionary<int, ServerInfo> servers, int uid)
         {
+            int hashedUid = HashMe(uid);
             foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
             {
                 if (serverEntry.Value.getBegin() <= hashedUid && 
@@ -90,10 +91,9 @@ namespace DSTM
         //Uses an implementation of Murmur hashing
         public static int HashMe(int num)
         {
-            //Murmur3 m = new Murmur3();
-            //return Math.Abs((int)BitConverter.ToUInt64(m.ComputeHash(BitConverter.
-            //                    GetBytes((ulong)num)), 0));
-            return 1;
+            Murmur3 m = new Murmur3();
+            return Math.Abs((int)BitConverter.ToUInt64(m.ComputeHash(BitConverter.
+                                GetBytes((ulong)num)), 0));
         }
 
 

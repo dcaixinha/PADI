@@ -99,7 +99,7 @@ namespace Client
                 PadInt result = serverObj.CreatePadInt(myself, uid);
                 return result;
             }
-            catch (TxException) { }
+            catch (TxException e) { Console.WriteLine(e.reason); }
             return null;
 
         }
@@ -137,6 +137,8 @@ namespace Client
         {
             ClientNode cn = new ClientNode();
             string input;
+            Console.WriteLine("Commands:");
+            Console.WriteLine("init | txbegin | create <uid>");
             while (true)
             {
                 input = Console.ReadLine();
@@ -144,6 +146,17 @@ namespace Client
                     cn.Init();
                 else if (input.Equals("txbegin"))
                     cn.TxBegin();
+                else if (input.StartsWith("create")) //create <uid>
+                {
+                    string[] words = input.Split(' ');
+                    int uid = Convert.ToInt32(words[1]);
+                    try
+                    {
+                        PadInt padint = cn.CreatePadInt(uid);
+                        Console.WriteLine(padint.Read());
+                    }
+                    catch (TxException e) { Console.WriteLine(e.reason); }
+                }
                 else
                     cn.Send(input);
             }

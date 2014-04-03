@@ -7,16 +7,15 @@ using DSTM;
 
 namespace Master {
 
-	class MasterNode {
+	public class MasterNode {
 
 		static void Main(string[] args) {
+            TcpChannel channel = new TcpChannel(8086);
+            ChannelServices.RegisterChannel(channel, false);
 
-			TcpChannel channel = new TcpChannel(8086);
-			ChannelServices.RegisterChannel(channel,false);
-
-			RemotingConfiguration.RegisterWellKnownServiceType( typeof(Master),
+            RemotingConfiguration.RegisterWellKnownServiceType(typeof(Master),
                 "Master", WellKnownObjectMode.Singleton);
-      
+
 			System.Console.WriteLine("<enter> para sair...");
 			System.Console.ReadLine();
 		}
@@ -27,7 +26,6 @@ namespace Master {
     {
         private Queue<string> roundRobin = new Queue<string>(); //only bootstrap servers need this
         private int txIdCounter = 0;
-        private int numServers = 0;
         public string text = "";
 
         private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >

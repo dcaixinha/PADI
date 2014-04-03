@@ -31,6 +31,8 @@ namespace DSTM
 
         PadInt CreatePadInt(string clientPortAddress, int uid);
         PadInt AccessPadInt(string clientPortAddress, int uid);
+        int Read(int uid, string clientAddrPort);
+        void Write(int uid, string clientAddrPort, int value);
 
     }
 
@@ -38,8 +40,10 @@ namespace DSTM
     {
         //outro servidor envia updates com a topologia da rede
         void UpdateNetwork(string serverAddrPort);
-        PadIntInsider CreatePadInt(int uid);
-        PadIntInsider AccessPadInt(int uid);
+        void CreatePadInt(int uid);
+        void AccessPadInt(int uid);
+        int Read(int uid, int txId);
+        void Write(int uid, int txId);
     }
 
     public interface IServerMaster
