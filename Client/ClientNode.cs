@@ -16,6 +16,7 @@ namespace Client
         string address = DstmUtil.LocalIPAddress();
         string porto;
         string myself;
+        TcpChannel channel;
 
         public ClientNode()
         {
@@ -30,12 +31,20 @@ namespace Client
             return random.Next(1024, 65535).ToString();
         }
 
+        //Metodo que desliga o channel
+        public void CloseChannel()
+        {
+            channel.StopListening(null);
+            ChannelServices.UnregisterChannel(channel);
+            channel = null;
+        }
+
         //INIT
         public bool Init()
         {
             try
             {   //Cria o seu canal num porto aleatorio
-                TcpChannel channel = new TcpChannel(Convert.ToInt32(porto));
+                channel = new TcpChannel(Convert.ToInt32(porto));
                 ChannelServices.RegisterChannel(channel, false);
             }
             // Caso ja haja 1 cliente na mesma maquina que escolheu o mesmo porto.. improvavel mas..

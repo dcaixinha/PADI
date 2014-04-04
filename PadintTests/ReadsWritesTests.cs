@@ -42,6 +42,8 @@ namespace PadintTests
                 Console.WriteLine("Obtained: " + obtained);
                 if (obtained == value)
                     Console.WriteLine("TEST PASSED!");
+                cn.CloseChannel();
+                Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
         }
@@ -90,6 +92,8 @@ namespace PadintTests
                 Console.WriteLine("Obtained: " + obtained);
                 if (obtained == value)
                     Console.WriteLine("TEST PASSED!");
+                cn.CloseChannel();
+                Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
         }
@@ -100,10 +104,9 @@ namespace PadintTests
             Console.WriteLine("Register the server first...");
             Console.WriteLine("Press any key to start the test");
             Console.ReadLine();
-            //SO UM TESTE DE CADA VEZ!
 
-            //test.startReadOwnWritesBeforeCommit();
-            test.startReadOwnWritesAfterCommit(); //TODO este esta a falhar... o valor n passa por o committed value...
+            test.startReadOwnWritesBeforeCommit();
+            test.startReadOwnWritesAfterCommit();
             Console.ReadLine();
         }
     }
