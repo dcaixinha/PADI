@@ -132,6 +132,16 @@ namespace Client
             catch (TxException) { throw; }
         }
 
+        public bool TxAbort()
+        {
+            try
+            {
+                bool result = serverObj.TxAbort(myself);
+                return result;
+            }
+            catch (TxException) { throw; }
+        }
+
         //Chat
         public void Send(string msg)
         {

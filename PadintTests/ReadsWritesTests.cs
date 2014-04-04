@@ -12,7 +12,7 @@ namespace PadintTests
 {
     class ReadsWritesTests
     {
-        public void startReadOwnWritesBeforeCommit()
+        public void startReadOwnWritesAndAbort()
         {
             Console.WriteLine("startReadOwnWritesBeforeCommit");
             ClientNode cn = new ClientNode();
@@ -43,6 +43,9 @@ namespace PadintTests
                 if (obtained == value)
                     Console.WriteLine("TEST PASSED!\r\n");
                 else Console.WriteLine("FAILED!\r\n");
+
+                cn.TxAbort();
+
                 cn.CloseChannel();
                 Thread.Sleep(2000);
             }
@@ -94,6 +97,7 @@ namespace PadintTests
                 if (obtained == value)
                     Console.WriteLine("TEST PASSED!\r\n");
                 else Console.WriteLine("FAILED!\r\n");
+
                 cn.CloseChannel();
                 Thread.Sleep(2000);
             }
@@ -108,8 +112,8 @@ namespace PadintTests
             Console.WriteLine("Press any key to start the test");
             Console.ReadLine();
 
+            test.startReadOwnWritesAndAbort();
             test.startReadOwnWritesAfterCommit();
-            test.startReadOwnWritesBeforeCommit();
             Console.ReadLine();
         }
     }

@@ -227,9 +227,8 @@ namespace Server {
             }
             //Nao deve enviar a referencia remota do padint criado
             //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
-            //o responsavel pelo padint ou ter sido outro que devolveu a este uma referencia remota! O cliente
-            //nao lida directamente com a referencia remota.
-            //Portanto, o coordenador fica com esta ref remota, e envia um proxy ao cliente.
+            //o responsavel pelo padint ou outro qualquer! 
+            //Portanto, o coordenador fica com esta ref remota (uid), e envia um proxy ao cliente.
 
 
             //Actualiza a lista de servidores com objectos usados nesta tx: Add( txId, coordAddrPort)
@@ -404,12 +403,44 @@ namespace Server {
                 }
                 result = false;
             }
-            //Remover esta tx da lista de tx-servidores:
+            //Remover a tx da lista de tx-servidores:
             txServersList.Remove(txId);
-            //Remover a tx da lista dos clientes (fazer set a -1)
+            //Remover a tx da lista dos clientes-tx
             string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
             clients.Remove(clientAddrPort);
             return result;
+        }
+
+        //Client-Server
+        public bool TxAbort(string clientAddressPort)
+        {
+            //obtem a tx aberta
+            int txId = clients[clientAddressPort];
+
+            //obtem os servidores que guardam objectos que participaram na tx
+            List<string> serverList = txServersList[txId];
+            int numWaitingResponse = serverList.Count;
+
+            //Envio dos Aborts
+            foreach (string server in serverList)
+            { //TODO: paralelizar o envio destes pedidos
+                if (!server.Equals(myself))
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + server + "/Server");
+                    serv.Abort(txId);
+                }
+                else
+                {
+                    Abort(txId);
+                }
+            }
+            //Remover a tx da lista de tx-servidores:
+            txServersList.Remove(txId);
+            //Remover a tx da lista dos clientes-tx
+            string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
+            clients.Remove(clientAddrPort);
+            return true;
         }
 
 
@@ -492,9 +523,9 @@ namespace Server {
             //get the objects used in this txId
             List<int> uids = txObjList[txId];
 
-            //for each of these objects:
             foreach (int uid in uids)
             {
+                //for each of these objects:
                 PadIntInsider obj = myPadInts[uid];
                 obj.Commit();
             }
@@ -506,9 +537,9 @@ namespace Server {
             //get the objects used in this txId
             List<int> uids = txObjList[txId];
 
-            //for each of these objects:
             foreach (int uid in uids)
             {
+                //for each of these objects:
                 PadIntInsider obj = myPadInts[uid];
                 obj.Abort();
             }

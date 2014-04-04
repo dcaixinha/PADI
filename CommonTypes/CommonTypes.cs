@@ -34,6 +34,7 @@ namespace DSTM
         int Read(int uid, string clientAddrPort);
         void Write(int uid, string clientAddrPort, int value);
         bool TxCommit(string clientAddrPort);
+        bool TxAbort(string clientAddrPort);
 
     }
 
