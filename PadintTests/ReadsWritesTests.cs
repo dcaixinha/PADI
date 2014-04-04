@@ -104,16 +104,69 @@ namespace PadintTests
             catch (TxException e) { Console.WriteLine(e.reason); }
         }
 
+        public void startCanNotAccessAfterAbort()
+        {
+            Console.WriteLine("startCanNotAccessAfterAbort");
+            ClientNode cn = new ClientNode();
+            Console.WriteLine("Init...");
+            cn.Init();
+            Thread.Sleep(2000);
+
+            Console.WriteLine("TxBegin...");
+            cn.TxBegin();
+            Thread.Sleep(2000);
+
+            int uid = 3000;
+            int value = 77;
+
+            PadInt padint;
+            try
+            {
+                Console.WriteLine("CreatePadint " + uid + "...");
+                padint = cn.CreatePadInt(uid);
+                Thread.Sleep(2000);
+
+                Console.WriteLine("Writing value " + value + "...");
+                padint.Write(value);
+                Thread.Sleep(2000);
+
+                Console.WriteLine("Aborting...");
+                cn.TxAbort();
+                Thread.Sleep(2000);
+            }
+            catch (TxException e) { Console.WriteLine(e.reason); }
+
+            Console.WriteLine("TxBegin...");
+            cn.TxBegin();
+            Thread.Sleep(2000);
+
+            padint = null;
+            try
+            {
+                Console.WriteLine("AccessPadint " + uid + "...");
+                padint = cn.AccessPadInt(uid);
+            }
+            catch (TxException) { //It should throw a txException
+                Console.WriteLine("TEST PASSED!\r\n");
+            } finally{
+                if(padint!=null)
+                    Console.WriteLine("FAILED!\r\n");
+                cn.CloseChannel();
+                Thread.Sleep(2000);
+            }
+        }
+
 
         static void Main()
         {
             ReadsWritesTests test = new ReadsWritesTests();
             Console.WriteLine("Register the server first...");
-            Console.WriteLine("Press any key to start the test");
+            Console.WriteLine("Press any key to start the test(s)");
             Console.ReadLine();
 
             test.startReadOwnWritesAndAbort();
             test.startReadOwnWritesAfterCommit();
+            test.startCanNotAccessAfterAbort();
             Console.ReadLine();
         }
     }

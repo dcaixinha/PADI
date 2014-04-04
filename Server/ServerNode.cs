@@ -105,6 +105,11 @@ namespace Server {
         // Lista mantida pelos responsaveis por objectos envolvidos em txs
         // <txId, lista< uid > >
         private SortedDictionary<int, List<int>> txObjList = new SortedDictionary<int, List<int>>();
+
+        // Eh preciso manter uma lista nos responsaveis, dos objectos criados na tx actual, para em caso de abort,
+        // o objecto ser removido <txId, lista<uid>>
+        private SortedDictionary<int, List<int>> txCreatedObjList = new SortedDictionary<int, List<int>>();
+
         private string myself;
 
         public string GetAddress() { return myself; }
@@ -456,10 +461,16 @@ namespace Server {
             //Adiciona o novo padint ah sua lista de padints
             PadIntInsider novo = new PadIntInsider(uid);
             myPadInts.Add(uid, novo);
+
             //Actualiza a sua lista de objectos que participam nesta tx
             if (!txObjList.ContainsKey(txId))
                 txObjList.Add(txId, new List<int>());
             txObjList[txId].Add(uid);
+
+            //Actualiza a lista dos objectos deste servidor criados nesta tx (para em caso de abort poderem ser removidos)
+            if (!txCreatedObjList.ContainsKey(txId))
+                txCreatedObjList.Add(txId, new List<int>());
+            txCreatedObjList[txId].Add(uid);
         }
 
         //Server-Server
@@ -529,6 +540,10 @@ namespace Server {
                 PadIntInsider obj = myPadInts[uid];
                 obj.Commit();
             }
+            //Limpa a lista dos objectos que ele tem nesta tx
+            txObjList.Remove(txId);
+            //Limpa a lista dos objectos que ele criou para esta tx
+            txCreatedObjList.Remove(txId);
         }
 
         //Server-Server
@@ -543,6 +558,18 @@ namespace Server {
                 PadIntInsider obj = myPadInts[uid];
                 obj.Abort();
             }
+            //Limpa a lista dos objectos que ele tem nesta tx
+            txObjList.Remove(txId);
+            //Para cada objecto que criou (se criou algum!) no contexto desta tx, remove-o
+            if (txCreatedObjList.ContainsKey(txId))
+            {
+                List<int> createdUids = txCreatedObjList[txId];
+                foreach (int uid in createdUids)
+                    myPadInts.Remove(uid);
+            }
+            //Limpa a lista dos objectos que ele criou para esta tx
+            txCreatedObjList.Remove(txId);
+            
         }
 
     }
