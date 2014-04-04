@@ -41,7 +41,8 @@ namespace PadintTests
                 int obtained = padint.Read();
                 Console.WriteLine("Obtained: " + obtained);
                 if (obtained == value)
-                    Console.WriteLine("TEST PASSED!");
+                    Console.WriteLine("TEST PASSED!\r\n");
+                else Console.WriteLine("FAILED!\r\n");
                 cn.CloseChannel();
                 Thread.Sleep(2000);
             }
@@ -91,12 +92,14 @@ namespace PadintTests
                 int obtained = padint.Read();
                 Console.WriteLine("Obtained: " + obtained);
                 if (obtained == value)
-                    Console.WriteLine("TEST PASSED!");
+                    Console.WriteLine("TEST PASSED!\r\n");
+                else Console.WriteLine("FAILED!\r\n");
                 cn.CloseChannel();
                 Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
         }
+
 
         static void Main()
         {
@@ -105,8 +108,8 @@ namespace PadintTests
             Console.WriteLine("Press any key to start the test");
             Console.ReadLine();
 
-            test.startReadOwnWritesBeforeCommit();
             test.startReadOwnWritesAfterCommit();
+            test.startReadOwnWritesBeforeCommit();
             Console.ReadLine();
         }
     }

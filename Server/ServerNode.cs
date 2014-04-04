@@ -162,10 +162,10 @@ namespace Server {
         }
 
         //Here the client already knows it is assigned to this server and registers with it
-        public void RegisterClient(string addrPort)
-        {
-            clients.Add(addrPort, -1);
-        }
+        //public void RegisterClient(string addrPort)
+        //{
+        //    clients.Add(addrPort, -1);
+        //}
 
         //CHAT: Client calls this to send a message to the server (this server is simply forwarding to the master)
         public void Send(string message, string porto)
@@ -183,7 +183,7 @@ namespace Server {
         public bool TxBegin(string clientAddressPort)
         { 
             //Se o cliente ja tem 1 tx a decorrer
-            if (!clients.ContainsKey(clientAddressPort) || clients[clientAddressPort] != -1)
+            if (clients.ContainsKey(clientAddressPort))
                 return false;
             else
             {
@@ -191,7 +191,7 @@ namespace Server {
                 IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
                     "tcp://" + ServerNode.masterAddrPort + "/Master");
                 int txId = master.getTxId();
-                clients[clientAddressPort] = txId; //update tx ID for this client
+                clients.Add(clientAddressPort, txId);//update tx ID for this client
                 txServersList.Add(txId, new List<string>());
                 DstmUtil.ShowClientsList(clients);
                 return true;
@@ -202,8 +202,9 @@ namespace Server {
         public PadInt CreatePadInt(string clientAddressPort, int uid)
         {
             //verifica se o client tem 1 tx aberta
+            if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
+            //TODO: aqui deve ser possivel criar este padint fora duma tx em q eh committed automaticamente
             int txId = clients[clientAddressPort];
-            if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
 
             //verifica quem eh o servidor responsavel (o hash eh feito la dentro do metodo)
             string responsible = DstmUtil.GetResponsibleServer(servers, uid);
@@ -246,8 +247,8 @@ namespace Server {
         public PadInt AccessPadInt(string clientAddressPort, int uid)
         {
             //verifica se o client tem 1 tx aberta
+            if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
             int txId = clients[clientAddressPort];
-            if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
 
             //returns the portAddress of the server responsible for that uid
             string responsible = DstmUtil.GetResponsibleServer(servers, uid);
@@ -407,7 +408,7 @@ namespace Server {
             txServersList.Remove(txId);
             //Remover a tx da lista dos clientes (fazer set a -1)
             string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
-            clients[clientAddrPort] = -1;
+            clients.Remove(clientAddrPort);
             return result;
         }
 

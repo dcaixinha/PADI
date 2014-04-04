@@ -54,19 +54,18 @@ namespace Client
             RemotingConfiguration.RegisterWellKnownServiceType(typeof(Client),
                 "Client", WellKnownObjectMode.Singleton);
 
-            //Faz bootstrap num servidor bem conhecido
-            try
-            {
+            //Faz bootstrap no master
+            try{
                 IMasterClient master = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
                     "tcp://" + ClientNode.masterAddrPort + "/Master");
 
-                //O cliente faz bootstrap no master
                 string serverAddrPort = master.BootstrapClient(myself);
                 serverObj = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
                     "tcp://" + serverAddrPort + "/Server");
+
                 //O cliente regista-se no servidor
-                serverObj.RegisterClient(myself);
+           //     serverObj.RegisterClient(myself);
 
                 //Escreve localmente quem eh o seu coordenador
                 Console.WriteLine("Server coordenador atribuido: " + serverAddrPort + "\r\n");
@@ -108,8 +107,7 @@ namespace Client
                 PadInt result = serverObj.CreatePadInt(myself, uid);
                 return result;
             }
-            catch (TxException e) { Console.WriteLine(e.reason); }
-            return null;
+            catch (TxException) { throw; }
 
         }
 
@@ -121,8 +119,7 @@ namespace Client
                 PadInt result = serverObj.AccessPadInt(myself, uid);
                 return result;
             }
-            catch (TxException) { }
-            return null;
+            catch (TxException) { throw; }
         }
 
         public bool TxCommit()

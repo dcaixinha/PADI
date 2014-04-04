@@ -22,7 +22,7 @@ namespace DSTM
         string GetAddress();
 
         //um cliente pode registar-se num servidor
-        void RegisterClient(string addrPort);
+  //      void RegisterClient(string addrPort);
 
         //um cliente pode enviar uma msg para o servidor
         void Send(string message, string porto);
