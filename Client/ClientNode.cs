@@ -116,6 +116,16 @@ namespace Client
             return null;
         }
 
+        public bool TxCommit()
+        {
+            try
+            {
+                bool result = serverObj.TxCommit(myself);
+                return result;
+            }
+            catch (TxException) { throw; }
+        }
+
         //Chat
         public void Send(string msg)
         {

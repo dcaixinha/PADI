@@ -27,12 +27,13 @@ namespace DSTM
         //um cliente pode enviar uma msg para o servidor
         void Send(string message, string porto);
 
-        bool TxBegin(string clientPortAddress);
+        bool TxBegin(string clientAddrPort);
 
-        PadInt CreatePadInt(string clientPortAddress, int uid);
-        PadInt AccessPadInt(string clientPortAddress, int uid);
+        PadInt CreatePadInt(string clientAddrPort, int uid);
+        PadInt AccessPadInt(string clientAddrPort, int uid);
         int Read(int uid, string clientAddrPort);
         void Write(int uid, string clientAddrPort, int value);
+        bool TxCommit(string clientAddrPort);
 
     }
 
@@ -40,10 +41,13 @@ namespace DSTM
     {
         //outro servidor envia updates com a topologia da rede
         void UpdateNetwork(string serverAddrPort);
-        void CreatePadInt(int uid);
-        void AccessPadInt(int uid);
+        void CreatePadInt(int uid, int txId);
+        void AccessPadInt(int uid, int txId);
         int Read(int uid, int txId);
         void Write(int uid, int txId, int value);
+        bool CanCommit(int txId);
+        void Commit(int txId);
+        void Abort(int txId);
     }
 
     public interface IServerMaster

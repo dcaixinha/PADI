@@ -117,5 +117,19 @@ namespace DSTM
                 Console.WriteLine(item.Key + " | " + item.Value);
             }
         }
+
+        public static void ShowTxServersList(SortedDictionary<int, List<string>> txServersList)
+        {
+            Console.WriteLine("ShowTxServersList");
+            Console.WriteLine("txId : serverAddrPort1,...");
+            foreach (KeyValuePair<int, List<string>> kvp in txServersList)
+            {
+                Console.Write(kvp.Key+" : ");
+                foreach(string addrPort in kvp.Value)
+                    Console.Write(" " + addrPort);
+                Console.Write("\r\n");
+            }
+        }
+
     }
 }

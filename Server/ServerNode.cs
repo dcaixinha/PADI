@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Windows.Forms;
 using DSTM;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Server {
 
@@ -96,11 +97,14 @@ namespace Server {
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         private SortedDictionary<int, PadIntInsider> myPadInts = new SortedDictionary<int, PadIntInsider>(); //uid, padint
 
-        // Lista de objectos por tx (coordenador) <txId, dicionario< uid, PadInt >
-        // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit
-        // TODO: aqui bastava guardar os uids usados em cada tx, n eh preciso os PadInt remotos...
-        // TODO: alias... basta guardar os endereços dos servidores que têm objectos desta tx... para os contactar
-        private SortedDictionary<int, List<string>> txList = new SortedDictionary<int, List<string>>();
+        // Lista mantida pelo coordenador
+        // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit,
+        // basta guardar os endereços dos servidores que têm objectos desta tx para os contactar
+        private SortedDictionary<int, List<string>> txServersList = new SortedDictionary<int, List<string>>();
+
+        // Lista mantida pelos responsaveis por objectos envolvidos em txs
+        // <txId, lista< uid > >
+        private SortedDictionary<int, List<int>> txObjList = new SortedDictionary<int, List<int>>();
         private string myself;
 
         public string GetAddress() { return myself; }
@@ -188,7 +192,7 @@ namespace Server {
                     "tcp://" + ServerNode.masterAddrPort + "/Master");
                 int txId = master.getTxId();
                 clients[clientAddressPort] = txId; //update tx ID for this client
-                txList.Add(txId, new List<string>());
+                txServersList.Add(txId, new List<string>());
                 DstmUtil.ShowClientsList(clients);
                 return true;
             }
@@ -212,13 +216,13 @@ namespace Server {
                 try
                 {   IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + responsible + "/Server");
-                    serv.CreatePadInt(uid);
+                serv.CreatePadInt(uid, txId);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
             {
-                CreatePadInt(uid); 
+                CreatePadInt(uid, txId); 
             }
             //Nao deve enviar a referencia remota do padint criado
             //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
@@ -227,8 +231,11 @@ namespace Server {
             //Portanto, o coordenador fica com esta ref remota, e envia um proxy ao cliente.
 
 
-            //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
-            txList[txId].Add(responsible);
+            //Actualiza a lista de servidores com objectos usados nesta tx: Add( txId, coordAddrPort)
+            if (!txServersList[txId].Contains(responsible))
+                txServersList[txId].Add(responsible);
+
+            DstmUtil.ShowTxServersList(txServersList);
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
             return proxy;             
@@ -254,21 +261,22 @@ namespace Server {
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + responsible + "/Server");
-                    serv.AccessPadInt(uid);
+                    serv.AccessPadInt(uid, txId);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
             {
-                AccessPadInt(uid);
+                AccessPadInt(uid, txId);
             }
             //Nao deve enviar a referencia remota do padint criado
             //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
             //o responsavel pelo padint ou outro qualquer! 
             //Portanto, o coordenador fica com esta ref remota (uid), e envia um proxy ao cliente.
 
-            //Actualiza a lista de padints remotos ou locais, na lista de txs: Add( txId, PadintInsider)
-            txList[txId].Add(responsible); 
+            //Actualiza a lista de servidores com objectos usados nesta tx: Add( txId, coordAddrPort)
+            if(!txServersList[txId].Contains(responsible))
+                txServersList[txId].Add(responsible); 
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
             return proxy;
@@ -336,30 +344,106 @@ namespace Server {
             }
         }
 
+        //Client-Server
+        //DUVIDA: em q situações devolve false e em q situaçoes lança except
+        public bool TxCommit(string clientAddressPort) 
+        {
+            //obtem a tx aberta
+            int txId = clients[clientAddressPort];
+
+            //obtem os servidores que guardam objectos que participaram na tx
+            List<string> serverList = txServersList[txId];
+            int numWaitingResponse = serverList.Count;
+            bool canCommit = false;
+            bool result;
+            //Envio dos canCommits
+            foreach(string server in serverList){ //TODO: paralelizar o envio destes pedidos
+                if (!server.Equals(myself))
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + server + "/Server");
+                    canCommit = serv.CanCommit(txId);
+                    if (canCommit)
+                        numWaitingResponse--;
+
+                }
+                else
+                {
+                    CanCommit(txId);
+                    numWaitingResponse--; //Nao fica ah espera de si mesmo
+                }
+            }
+            //Se todos responderam ao canCommit: Envio dos commits a todos
+            if (numWaitingResponse == 0)
+            {
+                foreach (string server in serverList)
+                {
+                    if (!server.Equals(myself))
+                    {
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + server + "/Server");
+                        serv.Commit(txId);
+                    }
+                    else Commit(txId); //O proprio faz commit se pertencer a esta lista de responsaveis
+                }
+                result = true;
+            }
+            //Caso contrario: Envio de aborts a todos
+            else
+            {
+                foreach (string server in serverList)
+                {
+                    if (!server.Equals(myself))
+                    {
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + server + "/Server");
+                        serv.Abort(txId);
+                    }
+                    else Abort(txId); //O proprio faz abort se pertencer a esta lista de responsaveis
+                }
+                result = false;
+            }
+            //Remover esta tx da lista de tx-servidores:
+            txServersList.Remove(txId);
+            //Remover a tx da lista dos clientes (fazer set a -1)
+            string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
+            clients[clientAddrPort] = -1;
+            return result;
+        }
+
 
         //Server-Server
         //So o servidor responsavel pelo padint vai correr este metodo
         //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
-        public void CreatePadInt(int uid)
+        public void CreatePadInt(int uid, int txId)
         {
             //Verifica se o padint ja existe
             if (myPadInts.ContainsKey(uid))
                 throw new TxException("PadInt with id '" + uid.ToString() + "' already exists!");
 
+            //Adiciona o novo padint ah sua lista de padints
             PadIntInsider novo = new PadIntInsider(uid);
             myPadInts.Add(uid, novo);
+            //Actualiza a sua lista de objectos que participam nesta tx
+            if (!txObjList.ContainsKey(txId))
+                txObjList.Add(txId, new List<int>());
+            txObjList[txId].Add(uid);
         }
 
         //Server-Server
         //So o servidor responsavel pelo padint vai correr este metodo
         //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
-        public void AccessPadInt(int uid)
+        //Nao tem de devolver a referencia remota, nem o valor, pq o valor vai obtido pelo cliente
+        //atraves de uma chamada remota pelo protocolo...
+        public void AccessPadInt(int uid, int txId)
         {
             //Verifica se o padint ja existe
             if (myPadInts.ContainsKey(uid))
             {
-                PadIntInsider novo;
-                myPadInts.TryGetValue(uid, out novo);
+                //Actualiza a sua lista de objectos que participam nesta tx
+                if (!txObjList.ContainsKey(txId))
+                    txObjList.Add(txId, new List<int>());
+                txObjList[txId].Add(uid);
             }
             else
                 throw new TxException("PadInt with id '" + uid.ToString() + "' doesn't exist!");
@@ -383,6 +467,50 @@ namespace Server {
             myPadInts.TryGetValue(uid, out padint);
             padint.Write(txId, value);
             //returns immediately?
+        }
+
+        //Server-Server
+        //DUVIDA: em que situacao o canCommit retorna false?
+        public bool CanCommit(int txId)
+        {
+            //get the objects used in this txId
+            List<int> uids = txObjList[txId];
+
+            //for each of these objects:
+            foreach (int uid in uids)
+            {
+                PadIntInsider obj = myPadInts[uid];
+                obj.CanCommit(txId);
+            }
+            return true;
+        }
+
+        //Server-Server
+        public void Commit(int txId)
+        {
+            //get the objects used in this txId
+            List<int> uids = txObjList[txId];
+
+            //for each of these objects:
+            foreach (int uid in uids)
+            {
+                PadIntInsider obj = myPadInts[uid];
+                obj.Commit();
+            }
+        }
+
+        //Server-Server
+        public void Abort(int txId)
+        {
+            //get the objects used in this txId
+            List<int> uids = txObjList[txId];
+
+            //for each of these objects:
+            foreach (int uid in uids)
+            {
+                PadIntInsider obj = myPadInts[uid];
+                obj.Abort();
+            }
         }
 
     }
