@@ -24,7 +24,7 @@ namespace Master {
     //Objecto remoto do master, atraves do qual os servidores o contactam
     public class Master : MarshalByRefObject, IMasterClient, IMasterServer
     {
-        private Queue<string> roundRobin = new Queue<string>(); //only bootstrap servers need this
+        private Queue<string> roundRobin = new Queue<string>();
         private int txIdCounter = 0;
         public string text = "";
 
@@ -78,6 +78,73 @@ namespace Master {
                 catch (Exception e) { Console.WriteLine(e); }
             }
         }
+
+        public bool Fail(string serverURL)
+        {
+            try
+            {
+                IServerMaster serverFailing = (IServerMaster)Activator.GetObject(
+                    typeof(IServerMaster),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverFailing.Fail();
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("The master could not locate server");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
+        public bool Freeze(string serverURL)
+        {
+            try
+            {
+                IServerMaster serverFailing = (IServerMaster)Activator.GetObject(
+                    typeof(IServerMaster),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverFailing.Freeze();
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("The master could not locate server");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
+        public bool Recover(string serverURL)
+        {
+            try
+            {
+                IServerMaster serverRecovering = (IServerMaster)Activator.GetObject(
+                    typeof(IServerMaster),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverRecovering.Recover();
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("The master could not locate server");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
 
     }
 

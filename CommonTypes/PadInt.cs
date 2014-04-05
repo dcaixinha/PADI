@@ -34,7 +34,7 @@ namespace DSTM
             {
                 IServerClient serv = (IServerClient)Activator.GetObject(typeof(IServerClient),
                     "tcp://" + coordinatorAddressPort + "/Server");
-                int result = serv.Read(uid, clientAddressPort);
+                int result = serv.Read(clientAddressPort, uid);
                 return result;
             }
             catch (TxException) { throw; }
@@ -49,7 +49,7 @@ namespace DSTM
             {
                 IServerClient serv = (IServerClient)Activator.GetObject(typeof(IServerClient),
                     "tcp://" + coordinatorAddressPort + "/Server");
-                serv.Write(uid, clientAddressPort, value);
+                serv.Write(clientAddressPort, uid, value);
             }
             catch (TxException) { throw; }
             catch (Exception e) { Console.WriteLine(e); }

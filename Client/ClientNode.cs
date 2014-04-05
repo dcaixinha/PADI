@@ -12,6 +12,7 @@ namespace Client
     public class ClientNode
     {
         public static IServerClient serverObj; //inicializado na resposta ao bootstrap
+        public static IMasterClient masterObj; //inicializado durante o bootstrap. Usado para os fails, freezes, etc.
         public static string masterAddrPort = "localhost:8086";
         string address = DstmUtil.LocalIPAddress();
         string porto;
@@ -56,10 +57,10 @@ namespace Client
 
             //Faz bootstrap no master
             try{
-                IMasterClient master = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
+                masterObj = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
                     "tcp://" + ClientNode.masterAddrPort + "/Master");
 
-                string serverAddrPort = master.BootstrapClient(myself);
+                string serverAddrPort = masterObj.BootstrapClient(myself);
                 serverObj = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
                     "tcp://" + serverAddrPort + "/Server");
@@ -159,6 +160,61 @@ namespace Client
                 else throw;
             }
         }
+
+        public bool Fail(string serverURL)
+        {
+            try
+            {
+                bool result = masterObj.Fail(serverURL);
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("Client could not locate master");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
+        public bool Freeze(string serverURL)
+        {
+            try
+            {
+                bool result = masterObj.Freeze(serverURL);
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("Client could not locate master");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
+        public bool Recover(string serverURL)
+        {
+            try
+            {
+                bool result = masterObj.Recover(serverURL);
+                return result;
+            }
+            catch (Exception e)
+            {
+                if (e is SocketException || e is NullReferenceException)
+                {
+                    System.Console.WriteLine("Client could not locate master");
+                    return false;
+                }
+                else throw;
+            }
+        }
+
         static void Main()
         {
             ClientNode cn = new ClientNode();

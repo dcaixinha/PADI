@@ -21,6 +21,7 @@ namespace Server {
         string porto;
         string myself;
         Server serv; //O seu objecto remoto
+        
 
         public void Register(string porto){
 
@@ -112,6 +113,15 @@ namespace Server {
 
         private string myself;
 
+        //Pedidos pendentes (durante o freeze) para este servidor < nome do comando, lista de argumentos > 
+        private Queue<Action> pendingCommands = new Queue<Action>();
+
+        // estados em que o servidor pode estar
+        enum State {Normal, Failed, Freezed};
+
+        // estado atual do servidor (para saber se pode aceitar pedidos ou se esta failed/freezed)
+        private State currentState = State.Normal;
+
         public string GetAddress() { return myself; }
 
         //ServerNode updates this object after successful registration with master
@@ -184,9 +194,25 @@ namespace Server {
             catch (Exception e) { Console.WriteLine(e); }
         }
 
+        // DEBUG METHOD ---- TO BE DELETED LATER
+        public void debugRecover(string s)
+        {
+            Console.WriteLine(s);
+        }
+
         //Client-Server
         public bool TxBegin(string clientAddressPort)
-        { 
+        {
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+               // pendingCommands.Enqueue(() => TxBegin(clientAddressPort));
+                pendingCommands.Enqueue(() => debugRecover("HELLO WORLD!"));
+                return false;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //Se o cliente ja tem 1 tx a decorrer
             if (clients.ContainsKey(clientAddressPort))
                 return false;
@@ -206,6 +232,16 @@ namespace Server {
         //Client-Server
         public PadInt CreatePadInt(string clientAddressPort, int uid)
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => CreatePadInt(clientAddressPort, uid));
+                return null;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //verifica se o client tem 1 tx aberta
             if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
             //TODO: aqui deve ser possivel criar este padint fora duma tx em q eh committed automaticamente
@@ -250,6 +286,17 @@ namespace Server {
         //Client-Server
         public PadInt AccessPadInt(string clientAddressPort, int uid)
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => AccessPadInt(clientAddressPort, uid));
+                return null;       //duvida o qq retorna quando o server esta freeze?
+            }
+
+
             //verifica se o client tem 1 tx aberta
             if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
             int txId = clients[clientAddressPort];
@@ -290,8 +337,18 @@ namespace Server {
         }
 
         //Client-Server
-        public int Read(int uid, string clientAddressPort)
+        public int Read(string clientAddressPort, int uid)
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => Read(clientAddressPort, uid));
+                return -1;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //verifica se o client tem 1 tx aberta
             int txId = clients[clientAddressPort];
             if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
@@ -321,8 +378,18 @@ namespace Server {
         }
 
         //Client-Server
-        public void Write(int uid, string clientAddressPort, int value)
+        public void Write(string clientAddressPort, int uid, int value)
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => Write(clientAddressPort, uid, value));
+                return;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //verifica se o client tem 1 tx aberta
             int txId = clients[clientAddressPort];
             if (txId == -1) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
@@ -353,6 +420,16 @@ namespace Server {
         //DUVIDA: em q situações devolve false e em q situaçoes lança except
         public bool TxCommit(string clientAddressPort) 
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => TxCommit(clientAddressPort));
+                return false;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //obtem a tx aberta
             int txId = clients[clientAddressPort];
 
@@ -419,6 +496,16 @@ namespace Server {
         //Client-Server
         public bool TxAbort(string clientAddressPort)
         {
+
+            //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
+            if (currentState == State.Failed)
+                throw new RemotingException("Server has failed!");
+            else if (currentState == State.Freezed)
+            {
+                pendingCommands.Enqueue(() => TxAbort(clientAddressPort));
+                return false;       //duvida o qq retorna quando o server esta freeze?
+            }
+
             //obtem a tx aberta
             int txId = clients[clientAddressPort];
 
@@ -490,7 +577,6 @@ namespace Server {
             }
             else
                 throw new TxException("PadInt with id '" + uid.ToString() + "' doesn't exist!");
-
 
         }
 
@@ -570,6 +656,74 @@ namespace Server {
             //Limpa a lista dos objectos que ele criou para esta tx
             txCreatedObjList.Remove(txId);
             
+        }
+
+        public bool Fail()
+        {
+            if (currentState == State.Failed)      // Ja esta failed, retorna false
+                return false;
+            else if (currentState == State.Freezed) 
+            {
+                pendingCommands.Clear();
+                currentState = State.Failed;
+                return true;
+            }
+            else                                // Caso esteja no estado "Normal"
+            {
+                currentState = State.Failed;
+                return true;
+            }
+
+        }
+
+        public bool Freeze()
+        {
+            if (currentState == State.Freezed || currentState == State.Failed)    // Ja esta freezed, retorna false. Se estiver failed não deve responder a isto (so a recov)
+                return false;
+            else
+            {
+                pendingCommands.Clear();
+                currentState = State.Freezed;
+                return true;
+            }
+        }
+
+        public bool Recover()
+        {
+            if (currentState == State.Normal)    // Ja esta freezed, retorna false. Se estiver failed não deve responder a isto (so a recov)
+                return false;
+            else if (currentState == State.Freezed)
+            {
+                currentState = State.Normal;
+                bool res = processQueueCommands();
+                if (res)
+                    return true;
+                else
+                    return false;
+            }
+            else
+            {
+                currentState = State.Normal; // Estava "Failed", volta ao normal
+                return true;
+            }
+        }
+
+        private bool processQueueCommands()
+        {
+            try
+            {
+                while (pendingCommands.Count != 0)
+                {
+                    Action action = pendingCommands.Dequeue();
+                    action();
+                }
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Caught exception on processQueueCommands. Reason: {0}", e.StackTrace);
+                return false;
+            }
         }
 
     }

@@ -31,8 +31,8 @@ namespace DSTM
 
         PadInt CreatePadInt(string clientAddrPort, int uid);
         PadInt AccessPadInt(string clientAddrPort, int uid);
-        int Read(int uid, string clientAddrPort);
-        void Write(int uid, string clientAddrPort, int value);
+        int Read(string clientAddrPort, int uid);
+        void Write(string clientAddrPort, int uid, int value);
         bool TxCommit(string clientAddrPort);
         bool TxAbort(string clientAddrPort);
 
@@ -55,6 +55,9 @@ namespace DSTM
     {
         //Master envia updates para o servidor
         void Update(string message);
+        bool Fail();
+        bool Freeze();
+        bool Recover();
 
     }
 
@@ -68,6 +71,9 @@ namespace DSTM
     public interface IMasterClient
     {
         string BootstrapClient(string addrPort);
+        bool Fail(string serverURL);
+        bool Freeze(string serverURL);
+        bool Recover(string serverURL);
     }
 
 }

@@ -7,7 +7,7 @@
     <ProjectGuid>{E8D33851-B696-4A19-9640-B32C38F2B09C}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>PadintTests</RootNamespace>
+    <RootNamespace>PadIntTests</RootNamespace>
     <AssemblyName>PadintTests</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
