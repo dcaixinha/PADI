@@ -69,7 +69,7 @@ namespace Client
            //     serverObj.RegisterClient(myself);
 
                 //Escreve localmente quem eh o seu coordenador
-                Console.WriteLine("Server coordenador atribuido: " + serverAddrPort + "\r\n");
+                Console.WriteLine("Server coordenador atribuido: " + serverAddrPort);
             }
             catch (SocketException)
             {

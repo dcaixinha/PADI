@@ -195,7 +195,7 @@ namespace PadintTests
                 bool res = cn.Fail(DstmUtil.LocalIPAddress() + ":4001");
                 if (!res)
                 {
-                    Console.WriteLine("TEST FAILED!");
+                    Console.WriteLine("TEST FAILED!\r\n");
                     return;
                 }
                 Thread.Sleep(2000);
@@ -204,7 +204,7 @@ namespace PadintTests
                 Console.WriteLine("AccessPadint " + uid + "...");
                 PadInt padint = cn.AccessPadInt(uid);
 
-                Console.WriteLine("TEST FAILED!");  // Se chegar aqui o teste falhou, devia ter gerado uma exception
+                Console.WriteLine("TEST FAILED!\r\n");  // Se chegar aqui o teste falhou, devia ter gerado uma exception
 
                 cn.CloseChannel();
                 Thread.Sleep(2000);
@@ -214,7 +214,8 @@ namespace PadintTests
             {
                 cn.CloseChannel();
                 cn.Recover(DstmUtil.LocalIPAddress() + ":4001");       // Repor o estado do servidor...
-                Console.WriteLine("Caught remoting exception! TEST PASSED!"); 
+                Console.WriteLine("Caught remoting exception!");
+                Console.WriteLine("TEST PASSED!\r\n"); 
             }
 
         }
@@ -255,7 +256,7 @@ namespace PadintTests
                 bool res = cn.Freeze(DstmUtil.LocalIPAddress() + ":4001");
                 if (!res)
                 {
-                    Console.WriteLine("TEST FAILED!");
+                    Console.WriteLine("TEST FAILED!\r\n");
                     return;
                 }
                 Thread.Sleep(2000);
@@ -263,9 +264,9 @@ namespace PadintTests
                 Console.WriteLine("TxBegin...");
                 bool txResult = cn.TxBegin();
                 if (!txResult)
-                    Console.WriteLine("TEST PASSED!");
+                    Console.WriteLine("TEST PASSED!\r\n");
                 else
-                    Console.WriteLine("TEST FAILED!");
+                    Console.WriteLine("TEST FAILED!\r\n");
 
                 cn.CloseChannel();
                 cn.Recover(DstmUtil.LocalIPAddress() + ":4001");       // Repor o estado do servidor...
@@ -313,7 +314,7 @@ namespace PadintTests
                 bool res = cn.Freeze(DstmUtil.LocalIPAddress() + ":4001");
                 if (!res)
                 {
-                    Console.WriteLine("TEST FAILED!");
+                    Console.WriteLine("TEST FAILED!\r\n");
                     return;
                 }
                 Thread.Sleep(2000);
@@ -321,11 +322,11 @@ namespace PadintTests
                 Console.WriteLine("TxBegin...");
                 bool txResult = cn.TxBegin();
                 if (txResult)
-                    Console.WriteLine("TEST FAILED!");
+                    Console.WriteLine("TEST FAILED!\r\n");
 
                 cn.Recover(DstmUtil.LocalIPAddress() + ":4001");
 
-                Console.WriteLine("Check if in the Server Console was displayed 'HELLO WORLD!'. If yes, TEST PASSED! TEST FAILED otherwise.");
+                Console.WriteLine("Check if in the Server Console was displayed 'HELLO WORLD!'. If yes, TEST PASSED! TEST FAILED otherwise.\r\n");
 
                 cn.CloseChannel();
                 Thread.Sleep(2000);
