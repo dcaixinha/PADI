@@ -49,18 +49,6 @@ namespace Server {
 
         }
 
-        public void Send(string msg)
-        {
-            try
-            {
-                //Console.WriteLine(msg);
-                masterObj.Send(msg+"\r\n");
-            }catch(SocketException)
-	 		{
-	 			System.Console.WriteLine("Could not locate master");
-	 		}
-        }
-
         static void Main(string[] args)
         {
             ServerNode sn = new ServerNode();
@@ -85,14 +73,12 @@ namespace Server {
                     else
                         Console.WriteLine("Wrong command format. Use 'register <port>'");
                 }
-                else 
-                    sn.Send(input);
             }
         }
 	}
 
     //Objecto remoto dos servidores, atraves do qual o master envia respostas
-    public class Server : MarshalByRefObject, IServerClient, IServerServer, IServerMaster
+    public class Server : MarshalByRefObject, IServerClient, IServerServer
     {
         private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
@@ -155,43 +141,6 @@ namespace Server {
             { 
                 DstmUtil.InsertServer(serverAddrPort, servers); //TODO ver que objectos tem que passar, ou se tem?
             }
-        }
-
-        //CHAT: Master calls this to update the server
-        public void Update(string message)
-        {
-            Console.WriteLine(message);
-            if (clients.Keys.Count > 0)
-            {
-                foreach (KeyValuePair<string, int> item in clients)
-                {
-                    IClientServer client = (IClientServer)Activator.GetObject(typeof(IClientServer), 
-                        "tcp://" + item.Key + "/Client");
-                    try
-                    {
-                        client.Update(message);
-                    }
-                    catch (Exception e) { Console.WriteLine(e); }
-                }
-            }
-        }
-
-        //Here the client already knows it is assigned to this server and registers with it
-        //public void RegisterClient(string addrPort)
-        //{
-        //    clients.Add(addrPort, -1);
-        //}
-
-        //CHAT: Client calls this to send a message to the server (this server is simply forwarding to the master)
-        public void Send(string message, string porto)
-        {
-            IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer), 
-                "tcp://" + ServerNode.masterAddrPort + "/Master");
-            try
-            {
-                master.Send(message);
-            }
-            catch (Exception e) { Console.WriteLine(e); }
         }
 
         // DEBUG METHOD ---- TO BE DELETED LATER

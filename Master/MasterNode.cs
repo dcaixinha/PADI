@@ -26,17 +26,9 @@ namespace Master {
     {
         private Queue<string> roundRobin = new Queue<string>();
         private int txIdCounter = 0;
-        public string text = "";
 
         private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >
 
-        //CHAT
-        public void Send(string message)
-        {
-            text = text + message;
-            //Console.WriteLine(message);
-            Broadcast(message);
-        }
 
         public SortedDictionary<int, ServerInfo> RegisterServer(string serverAddrPort)
         {
@@ -63,21 +55,6 @@ namespace Master {
             return serverAddrPort;
         }
 
-        //Metodo interno, que obtem invoca nos objectos remotos de cada servidor,
-        //um metodo que vai conter a resposta do master (excepto no que enviou)
-        private void Broadcast(string msg)
-        {
-            foreach (ServerInfo sInfo in servers.Values)
-            {
-                IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
-                    "tcp://" + sInfo.getPortAddress() + "/Server");
-                try
-                {
-                    serv.Update(msg);
-                }
-                catch (Exception e) { Console.WriteLine(e); }
-            }
-        }
     }
 
 }

@@ -51,10 +51,6 @@ namespace Client
             // Caso ja haja 1 cliente na mesma maquina que escolheu o mesmo porto.. improvavel mas..
             catch (SocketException) { return false; }
 
-            //Instancia o seu objecto remoto, atraves do qual o servidor lhe envia respostas
-            RemotingConfiguration.RegisterWellKnownServiceType(typeof(Client),
-                "Client", WellKnownObjectMode.Singleton);
-
             //Faz bootstrap no master
             try{
                 masterObj = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
@@ -141,24 +137,6 @@ namespace Client
                 return result;
             }
             catch (TxException) { throw; }
-        }
-
-        //Chat
-        public void Send(string msg)
-        {
-            try
-            {
-                Console.WriteLine("Sending "+msg+" to "+serverObj.GetAddress());
-                serverObj.Send(msg + "\r\n", porto);
-            }
-            catch (Exception e)
-            {
-                if (e is SocketException || e is NullReferenceException)
-                {
-                    System.Console.WriteLine("Could not locate server");
-                }
-                else throw;
-            }
         }
 
         public bool Fail(string serverURL)
@@ -252,20 +230,8 @@ namespace Client
                     }
                     catch (TxException e) { Console.WriteLine(e.reason); }
                 }
-                else
-                    cn.Send(input);
             }
         }
-    }
-
-    //Objecto remoto dos clientes, atraves do qual o servidor envia respostas
-    public class Client : MarshalByRefObject, IClientServer, IClientMaster
-    {
-        public void Update(string msg)
-        {
-            Console.WriteLine(msg);
-        }
-
     }
 
 }
