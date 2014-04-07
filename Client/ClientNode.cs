@@ -165,14 +165,18 @@ namespace Client
         {
             try
             {
-                bool result = masterObj.Fail(serverURL);
+                IServerClient serverFailing = (IServerClient)Activator.GetObject(
+                    typeof(IServerClient),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverFailing.Fail();
                 return result;
             }
             catch (Exception e)
             {
-                if (e is SocketException || e is NullReferenceException)
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
                 {
-                    System.Console.WriteLine("Client could not locate master");
+                    System.Console.WriteLine("The client could not locate the server to fail!");
                     return false;
                 }
                 else throw;
@@ -181,16 +185,21 @@ namespace Client
 
         public bool Freeze(string serverURL)
         {
+
             try
             {
-                bool result = masterObj.Freeze(serverURL);
+                IServerClient serverFailing = (IServerClient)Activator.GetObject(
+                    typeof(IServerClient),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverFailing.Freeze();
                 return result;
             }
             catch (Exception e)
             {
-                if (e is SocketException || e is NullReferenceException)
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
                 {
-                    System.Console.WriteLine("Client could not locate master");
+                    System.Console.WriteLine("The client could not locate the server to freeze!");
                     return false;
                 }
                 else throw;
@@ -201,14 +210,18 @@ namespace Client
         {
             try
             {
-                bool result = masterObj.Recover(serverURL);
+                IServerClient serverRecovering = (IServerClient)Activator.GetObject(
+                    typeof(IServerClient),
+                    "tcp://" + serverURL + "/Server");
+
+                bool result = serverRecovering.Recover();
                 return result;
             }
             catch (Exception e)
             {
-                if (e is SocketException || e is NullReferenceException)
+                if (e is System.Net.Sockets.SocketException || e is NullReferenceException)
                 {
-                    System.Console.WriteLine("Client could not locate master");
+                    System.Console.WriteLine("The client could not locate the server to recover!");
                     return false;
                 }
                 else throw;
