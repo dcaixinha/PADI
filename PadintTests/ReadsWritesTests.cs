@@ -252,6 +252,14 @@ namespace PadintTests
 
             try
             {
+                Console.WriteLine("TxBegin...");
+                cn.TxBegin();
+
+
+                Console.WriteLine("AccessPadint " + uid + "...");
+                PadInt padint = cn.AccessPadInt(uid);
+                Thread.Sleep(500);
+                
                 Console.WriteLine("Freezing Server " + DstmUtil.LocalIPAddress() + ":4001" + "...");
                 bool res = cn.Freeze("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
                 if (!res)
@@ -260,14 +268,21 @@ namespace PadintTests
                     return;
                 }
 
+                Console.WriteLine("Reading value (should be " + value + ")...");
+
                 // e preciso lancar uma instacia de cliente para fazer recover, pois este txbegin vai bloquear uma vez que o server esta freezed...
-                Console.WriteLine("Calling TxBegin, now launch a client debug instance and write the command:  recover ");
+                Console.WriteLine("Calling Read, now launch a client debug instance and write the command:  recover ");
 
-                cn.TxBegin();                
-
+                
+                int obtained = padint.Read();
+                Console.WriteLine("Obtained: " + obtained);
+                if (obtained == value)
+                    Console.WriteLine("TEST PASSED!\r\n");
+                else Console.WriteLine("FAILED!\r\n");
+                                
+                // nao se pode fazer isto aqui...
                 //Console.WriteLine("Recovering Server...");
                 //bool recvResult = cn.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
-                Console.WriteLine("Check if in the Server Console was displayed 'HELLO WORLD!'. If yes, TEST PASSED! TEST FAILED otherwise.\r\n");
 
                 cn.CloseChannel();
                 Thread.Sleep(500);

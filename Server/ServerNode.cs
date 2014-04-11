@@ -214,7 +214,6 @@ namespace Server {
                 var mre = new ManualResetEvent(false);
                 _queuedThreads.Add(mre);
                 mre.WaitOne();
-                Console.WriteLine("HELLO WORLD!!!");
             }
 
             //Se o cliente ja tem 1 tx a decorrer
@@ -756,12 +755,6 @@ namespace Server {
             DstmUtil.ShowServerList(servers);
             DstmUtil.ShowClientsList(clients);
             DstmUtil.ShowTxServersList(txServersList);
-        }
-
-        // DEBUG METHOD ---- TO BE DELETED LATER
-        public void debugRecover(string s)
-        {
-            Console.WriteLine(s);
         }
 
     }
