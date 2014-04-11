@@ -157,7 +157,7 @@ namespace Client
             {
                 IServerClient serverFailing = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
-                    "tcp://" + serverURL + "/Server");
+                    serverURL);
 
                 bool result = serverFailing.Fail();
                 return result;
@@ -180,7 +180,7 @@ namespace Client
             {
                 IServerClient serverFailing = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
-                    "tcp://" + serverURL + "/Server");
+                    serverURL );
 
                 bool result = serverFailing.Freeze();
                 return result;
@@ -202,7 +202,7 @@ namespace Client
             {
                 IServerClient serverRecovering = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
-                    "tcp://" + serverURL + "/Server");
+                    serverURL);
 
                 bool result = serverRecovering.Recover();
                 return result;
@@ -223,7 +223,7 @@ namespace Client
             ClientNode cn = new ClientNode();
             string input;
             Console.WriteLine("Commands:");
-            Console.WriteLine("init | txbegin | create <uid>");
+            Console.WriteLine("init | txbegin | recover | create <uid>");
             while (true)
             {
                 input = Console.ReadLine();
@@ -231,6 +231,8 @@ namespace Client
                     cn.Init();
                 else if (input.Equals("txbegin"))
                     cn.TxBegin();
+                else if (input.Equals("recover"))
+                    cn.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server"); // Para o freeze server test, pois tem de ser outra instancia a fazer o recov.
                 else if (input.StartsWith("create")) //create <uid>
                 {
                     string[] words = input.Split(' ');
