@@ -36,8 +36,13 @@ namespace DSTM
         bool CanCommit(int txId);
         void Commit(int txId);
         void Abort(int txId);
+        void UpdateObjects(List<PadIntInsider> toSendList);
     }
 
+    public interface IServerMaster
+    { 
+        void printSelfStatus();
+    }
 
     public interface IMasterServer
     {
@@ -48,6 +53,8 @@ namespace DSTM
     public interface IMasterClient
     {
         string BootstrapClient(string addrPort);
+
+        void Status();
     }
 
 }

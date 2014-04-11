@@ -33,6 +33,8 @@ namespace Client
         }
 
         //Metodo que desliga o channel
+        //Usado para nos testes podermos abrir o canal sempre que eh inicializada a library, depois
+        //de outro teste ja ter aberto um canal. No final de cada teste este metodo eh chamado.
         public void CloseChannel()
         {
             channel.StopListening(null);
@@ -137,6 +139,16 @@ namespace Client
                 return result;
             }
             catch (TxException) { throw; }
+        }
+
+        public bool Status()
+        {
+            try
+            {
+                masterObj.Status();
+                return true; //TODO: qdo eh q o status deve enviar false?
+            }
+            catch (Exception){ throw; }
         }
 
         public bool Fail(string serverURL)

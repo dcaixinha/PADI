@@ -9,6 +9,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 
 namespace DSTM
 {
+    [Serializable]
     public class PadIntInsider
     {
         private int uid;
@@ -35,6 +36,24 @@ namespace DSTM
         public int UID
         {
             get { return uid; }
+        }
+
+        public int COMMITREAD
+        {
+            get { return committedRead; }
+        }
+
+        public Tuple<int, int> COMMITWRITE
+        {
+            get { return committedWrite; }
+        }
+        public List<int> TENTREADS
+        {
+            get { return tentativeReads; }
+        }
+        public Dictionary<int, int> TENTWRITES
+        {
+            get { return tentativeWrites; }
         }
 
         public int Read(int txId)

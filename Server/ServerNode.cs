@@ -78,11 +78,15 @@ namespace Server {
 	}
 
     //Objecto remoto dos servidores, atraves do qual o master envia respostas
-    public class Server : MarshalByRefObject, IServerClient, IServerServer
+    public class Server : MarshalByRefObject, IServerClient, IServerServer, IServerMaster
     {
         private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         private SortedDictionary<int, PadIntInsider> myPadInts = new SortedDictionary<int, PadIntInsider>(); //uid, padint
+
+        private ServerInfo mySInfo = new ServerInfo(0,0,"");//Guarda o meu intervalo (begin, end, portAdress) 
+                                                            //Ter acesso directo a esta estrutura permite rapida
+                                                            //verificacao se eh preciso ou nao redistribuir certo padint
 
         // Lista mantida pelo coordenador
         // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit,
@@ -130,23 +134,70 @@ namespace Server {
                     }
                     catch (Exception e) { Console.WriteLine(e); }
                 }
+                else
+                {
+                    mySInfo = sInfo;    //Eu actualizo o meu ServerInfo (mantenho isto, para mais tarde a 
+                                        //redistribuicao dos objectos ser feita mais rapidamente
+                }
             }
             
         }
 
+        //Server-Server
         //Other servers call this to change topology after node join or leave
         public void UpdateNetwork(string serverAddrPort)
         {
             if (!DstmUtil.ServerInfoContains(servers, serverAddrPort)) //se ainda nao contem o elemento
             { 
-                DstmUtil.InsertServer(serverAddrPort, servers); //TODO ver que objectos tem que passar, ou se tem?
+                //Insere o novo servidor na lista de servers, e retorna o meu novo (ou nao) ServerInfo
+                ServerInfo newMySInfo = DstmUtil.InsertServer(serverAddrPort, servers, myself);
+                //Verificar se eu fui afectado pela entrada (os novos ficam sempre com a 2a metade
+                //do intervalo original, por isso basta ver se o limite superior do meu intervalo mudou)
+                if (mySInfo.getEnd() != newMySInfo.getEnd())
+                {
+                    //Se sim, tenho de actualizar o mySInfo
+                    mySInfo = newMySInfo;
+
+                    List<PadIntInsider> toSendList = new List<PadIntInsider>(); 
+                    //obter o meu intervalo novo e ver se eu tenho objectos fora desse intervalo
+                    foreach(PadIntInsider padint in myPadInts.Values){
+                        int ending = mySInfo.getEnd();
+                        int hashedUid = DstmUtil.HashMe(padint.UID);
+                        if (ending < hashedUid) //ja esta fora do intervalo
+                        { 
+                            toSendList.Add(padint);
+                        }
+                    }
+
+                    //Se tenho objectos para redistribuir, removo-os da minha lista e envio-os
+                    if (toSendList.Count != 0)
+                    {
+                        foreach (PadIntInsider padint in toSendList)
+                        {
+                            myPadInts.Remove(padint.UID); //removo da minha propria lista
+                        }
+                        try
+                        {
+                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                                "tcp://" + serverAddrPort + "/Server");
+                            serv.UpdateObjects(toSendList);
+                        }
+                        catch (Exception e) { Console.WriteLine(e); }
+                    }
+                }
+                //Se nao fui afectado pela entrada, nao tenho de fazer mais nada
             }
         }
 
-        // DEBUG METHOD ---- TO BE DELETED LATER
-        public void debugRecover(string s)
+        //Server-Server
+        //Quando este servidor entra, eh possivel que algum outro tenho objectos que agora pertencem a este
+        //portanto ao ser invocado este metodo, este servidor vai fazer update eh sua lista de objectos mantidos
+        public void UpdateObjects(List<PadIntInsider> toSendList)
         {
-            Console.WriteLine(s);
+            foreach (PadIntInsider padint in toSendList)
+            {
+                myPadInts.Add(padint.UID, padint);
+            }
         }
 
         //Client-Server
@@ -673,6 +724,26 @@ namespace Server {
                 Console.WriteLine("Caught exception on processQueueCommands. Reason: {0}", e.StackTrace);
                 return false;
             }
+        }
+
+        //Server - Master
+        //Para o status
+        public void printSelfStatus()
+        {
+            Console.WriteLine("=============");
+            Console.WriteLine("Server STATUS");
+            Console.WriteLine("=============");
+            Console.WriteLine("My interval: [" + mySInfo.getBegin() + ", "+ mySInfo.getEnd() + "]");
+            DstmUtil.ShowPadIntsList(myPadInts);
+            DstmUtil.ShowServerList(servers);
+            DstmUtil.ShowClientsList(clients);
+            DstmUtil.ShowTxServersList(txServersList);
+        }
+
+        // DEBUG METHOD ---- TO BE DELETED LATER
+        public void debugRecover(string s)
+        {
+            Console.WriteLine(s);
         }
 
     }

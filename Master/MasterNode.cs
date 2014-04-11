@@ -35,7 +35,8 @@ namespace Master {
             if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
             {
                 roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
-                DstmUtil.InsertServer(serverAddrPort, servers);
+                DstmUtil.InsertServer(serverAddrPort, servers, null);
+                Console.WriteLine("Registered: " + serverAddrPort);
 
                 return servers;
             }
@@ -55,6 +56,33 @@ namespace Master {
             return serverAddrPort;
         }
 
+        //Client calls this to show status
+        public void Status()
+        {
+            printSelfStatus();
+            //Contacta todos os servidores para lhes pedir para mostrar o status
+            foreach (ServerInfo sInfo in servers.Values)
+            {
+                string server = sInfo.getPortAddress();
+                try
+                {
+                    IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
+                        "tcp://" + server + "/Server");
+                    serv.printSelfStatus();
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+
+        }
+
+        private void printSelfStatus(){
+            Console.WriteLine("=============");
+            Console.WriteLine("Master STATUS");
+            Console.WriteLine("=============");
+            Console.WriteLine("TxId counter: " + txIdCounter);
+            DstmUtil.ShowQueue(roundRobin);
+            DstmUtil.ShowServerList(servers);
+        }
     }
 
 }

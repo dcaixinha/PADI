@@ -335,6 +335,60 @@ namespace PadintTests
 
         }
 
+        //When more servers enter, those that are already running have to update their one-hop lookup tables
+        //and one of the servers (whose interval will be cut in half) will potentially have to redistribute
+        //some of its padints
+        public void testRedistribution()
+        {
+            Console.WriteLine("testStatus");
+            ClientNode cn = new ClientNode();
+
+            Console.WriteLine("Register 2 servers and press any key...");
+            Console.ReadLine();
+
+            Console.WriteLine("Init...");
+            cn.Init();
+            Thread.Sleep(2000);
+
+            Console.WriteLine("TxBegin...");
+            cn.TxBegin();
+            Thread.Sleep(2000);
+
+            int uid = 0;
+            int value = 4;
+            try
+            {
+                Console.WriteLine("CreatePadint " + uid + "...");
+                PadInt padint = cn.CreatePadInt(uid);
+                Thread.Sleep(2000);
+
+                Console.WriteLine("Writing value " + value + "...");
+                padint.Write(value);
+                Thread.Sleep(2000);
+
+                Console.WriteLine("Committing...");
+                cn.TxCommit();
+                Thread.Sleep(2000);
+            }
+            catch (TxException e) { Console.WriteLine(e.reason); }
+
+            Console.WriteLine("Status...");
+            cn.Status();
+            Thread.Sleep(2000);
+
+            Console.WriteLine("Now register 2 more servers and press any key...");
+            Console.ReadLine();
+
+            Console.WriteLine("Status...");
+            cn.Status();
+            Thread.Sleep(2000);
+
+            Console.WriteLine("Verificar que o objecto 0 foi redistribuido do servidor 1 po servidor 4...");
+
+            cn.CloseChannel();
+            Thread.Sleep(2000);
+        }
+
         static void Main()
         {
             ReadsWritesTests test = new ReadsWritesTests();
@@ -348,6 +402,7 @@ namespace PadintTests
             test.failServerTest();
             test.freezeServerTest();
             test.recoverServerTest();
+            //test.testRedistribution();
             Console.ReadLine();
         }
     }
