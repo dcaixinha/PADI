@@ -366,9 +366,9 @@ namespace PadintTests
                 padint.Write(value);
                 Thread.Sleep(2000);
 
-                Console.WriteLine("Committing...");
-                cn.TxCommit();
-                Thread.Sleep(2000);
+                //Console.WriteLine("Committing...");
+                //cn.TxCommit();
+                //Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
@@ -396,13 +396,13 @@ namespace PadintTests
             Console.WriteLine("Press any key to start the test(s)");
             Console.ReadLine();
 
-            test.startReadOwnWritesAndAbort();
-            test.startReadOwnWritesAfterCommit();
-            test.startCanNotAccessAfterAbort();
-            test.failServerTest();
-            test.freezeServerTest();
-            test.recoverServerTest();
-            //test.testRedistribution();
+            //test.startReadOwnWritesAndAbort();
+            //test.startReadOwnWritesAfterCommit();
+            //test.startCanNotAccessAfterAbort();
+            //test.failServerTest();
+            //test.freezeServerTest();
+            //test.recoverServerTest();
+            test.testRedistribution();
             Console.ReadLine();
         }
     }

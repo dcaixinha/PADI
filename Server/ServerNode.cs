@@ -158,45 +158,108 @@ namespace Server {
                     //Se sim, tenho de actualizar o mySInfo
                     mySInfo = newMySInfo;
 
-                    List<PadIntInsider> toSendList = new List<PadIntInsider>(); 
+                    Dictionary<int, int> objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                    Dictionary<int, int> objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                    List<PadIntInsider> padintToSendList = new List<PadIntInsider>(); 
                     //obter o meu intervalo novo e ver se eu tenho objectos fora desse intervalo
                     foreach(PadIntInsider padint in myPadInts.Values){
                         int ending = mySInfo.getEnd();
                         int hashedUid = DstmUtil.HashMe(padint.UID);
                         if (ending < hashedUid) //ja esta fora do intervalo
                         { 
-                            toSendList.Add(padint);
+                            padintToSendList.Add(padint);
+                            //compilar lista de objectos e tx afectadas pela mudanca
+                            foreach (KeyValuePair<int, List<int>> kvp in txObjList)
+                            {
+                                if (kvp.Value.Contains(padint.UID))
+                                    objTxToSendDict[padint.UID] = kvp.Key;
+                            }
+                            foreach (KeyValuePair<int, List<int>> kvp in txCreatedObjList)
+                            {
+                                if (kvp.Value.Contains(padint.UID))
+                                    objCreatedTxToSendDict[padint.UID] = kvp.Key;
+                            }
                         }
                     }
 
-                    //Se tenho objectos para redistribuir, removo-os da minha lista e envio-os
-                    if (toSendList.Count != 0)
+                    //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
+                    //TODO: so posso enviar quando tiver a certeza que nao estao envolvidos em
+                    //nenhuma das minhas tx (ou de qualquer um...)... sera que isto eh problema?
+                    if (padintToSendList.Count != 0)
                     {
-                        foreach (PadIntInsider padint in toSendList)
+                        //removo da minha lista de padints
+                        foreach (PadIntInsider padint in padintToSendList)
                         {
-                            myPadInts.Remove(padint.UID); //removo da minha propria lista
+                            myPadInts.Remove(padint.UID); 
+                        }
+                        //Actualizar: txServerList, txObjList, txCreatedObjList
+                        //removo da minha lista de tx-obj, pq ja n sou responsavel pelo objecto
+                        foreach (KeyValuePair<int, int> kvp in objTxToSendDict)
+                        {
+                            int txId = kvp.Value;
+                            int uid = kvp.Key;
+                            txObjList[txId].Remove(uid);
+                            if (txObjList[txId].Count == 0)  //se a lista ficou vazia, elimina a entrada
+                            {
+                                txObjList.Remove(txId);
+                                //Se eu nao tenho objectos meus nesta tx, retiro-me da lista tx-server, se a entrada existir,
+                                //ou seja, se eu for o coordenador da tx que tinha objectos meus que foram redistribuidos
+                                if (txServersList.ContainsKey(txId))
+                                    txServersList[txId].Remove(myself);
+                            }
+                            //Se eu coordenar esta tx, actualizo a minha tx-server list, para dizer q o novo servidor 
+                            //participa em txs que eu coordeno
+                            if (txServersList.ContainsKey(txId) && !txServersList[txId].Contains(serverAddrPort))
+                                txServersList[txId].Add(serverAddrPort);
+                        }
+                        //removo da minha lista de tx-objCreated, pq ja n sou responsavel pelo objecto
+                        foreach (KeyValuePair<int, int> kvp in objCreatedTxToSendDict)
+                        {
+                            int txId = kvp.Value;
+                            int uid = kvp.Key;
+                            txCreatedObjList[txId].Remove(uid);
+                            if (txCreatedObjList[txId].Count == 0) //se a lista ficou vazia, elimina a entrada
+                            {
+                                txCreatedObjList.Remove(txId);
+                            }
                         }
                         try
                         {
                             IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                                 "tcp://" + serverAddrPort + "/Server");
-                            serv.UpdateObjects(toSendList);
+                            serv.UpdateObjects(padintToSendList, objTxToSendDict, objCreatedTxToSendDict);    
                         }
                         catch (Exception e) { Console.WriteLine(e); }
                     }
                 }
-                //Se nao fui afectado pela entrada, nao tenho de fazer mais nada
+                //Se nao fui afectado pela entrada do novo servidor, nao tenho de fazer mais nada
             }
         }
 
         //Server-Server
         //Quando este servidor entra, eh possivel que algum outro tenho objectos que agora pertencem a este
         //portanto ao ser invocado este metodo, este servidor vai fazer update eh sua lista de objectos mantidos
-        public void UpdateObjects(List<PadIntInsider> toSendList)
+        public void UpdateObjects(List<PadIntInsider> toSendList, Dictionary<int, int> objTxToSendDict, Dictionary<int, int> objCreatedTxToSendDict)
         {
             foreach (PadIntInsider padint in toSendList)
             {
                 myPadInts.Add(padint.UID, padint);
+            }
+            foreach (KeyValuePair<int, int> kvp in objTxToSendDict)
+            {
+                int txId = kvp.Value;
+                int uid = kvp.Key;
+                if (!txObjList.ContainsKey(txId))
+                    txObjList.Add(txId, new List<int>());
+                txObjList[txId].Add(uid);
+            }
+            foreach (KeyValuePair<int, int> kvp in objCreatedTxToSendDict)
+            {
+                int txId = kvp.Value;
+                int uid = kvp.Key;
+                if (!txCreatedObjList.ContainsKey(txId))
+                    txCreatedObjList.Add(txId, new List<int>());
+                txCreatedObjList[txId].Add(uid);
             }
         }
 
@@ -286,7 +349,6 @@ namespace Server {
         //Client-Server
         public PadInt AccessPadInt(string clientAddressPort, int uid)
         {
-
             //verifica se o server esta no estado "Normal". Se nao estiver, nao pode responder a este pedido (chamada de metodo)
             if (currentState == State.Failed)
                 throw new RemotingException("Server has failed!");
@@ -368,6 +430,7 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     value = serv.Read(uid, txId);
                 }
+                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
@@ -408,6 +471,7 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     serv.Write(uid, txId, value);
                 }
+                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
@@ -584,18 +648,26 @@ namespace Server {
         public int Read(int uid, int txId) {
             //search for the padint
             PadIntInsider padint;
-            myPadInts.TryGetValue(uid, out padint);
-            int result = padint.Read(txId);
-            return result;
+            bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
+            if (hasPadInt)
+            {
+                int result = padint.Read(txId);
+                return result;
+            }
+            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
         }
 
         //Server-Server
         public void Write(int uid, int txId, int value) {
             //search for the padint
             PadIntInsider padint;
-            myPadInts.TryGetValue(uid, out padint);
-            padint.Write(txId, value);
-            //returns immediately?
+            bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
+            if (hasPadInt)
+            {
+                padint.Write(txId, value);
+                //returns immediately?
+            }
+            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
         }
 
         //Server-Server
@@ -738,6 +810,7 @@ namespace Server {
             DstmUtil.ShowServerList(servers);
             DstmUtil.ShowClientsList(clients);
             DstmUtil.ShowTxServersList(txServersList);
+            DstmUtil.ShowTxObjectsList(txObjList);
         }
 
         // DEBUG METHOD ---- TO BE DELETED LATER

@@ -36,7 +36,7 @@ namespace DSTM
         bool CanCommit(int txId);
         void Commit(int txId);
         void Abort(int txId);
-        void UpdateObjects(List<PadIntInsider> toSendList);
+        void UpdateObjects(List<PadIntInsider> padintToSendList, Dictionary<int, int> objTxToSendDict, Dictionary<int, int> objCreatedTxToSendDict);
     }
 
     public interface IServerMaster

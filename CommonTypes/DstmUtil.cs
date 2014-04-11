@@ -145,7 +145,7 @@ namespace DSTM
             Console.WriteLine("Tx - Servers List");
             if (txServersList.Count > 0)
             {
-                Console.WriteLine("txId : server_1, server_2, ...");
+                Console.WriteLine("txId : server_1 server_2 ...");
                 foreach (KeyValuePair<int, List<string>> kvp in txServersList)
                 {
                     Console.Write(kvp.Key+" : ");
@@ -187,7 +187,6 @@ namespace DSTM
                     Console.WriteLine("Committed read (txid): " + padint.COMMITREAD);
                     Console.WriteLine("Committed write (txid - value): " + padint.COMMITWRITE.Item1 + " - " + padint.COMMITWRITE.Item2);
                     Console.WriteLine("Tentative reads (txid list): ");
-                    Console.WriteLine("----------");
                     foreach (int txid in padint.TENTREADS)
                     {
                         Console.Write(txid + " ");
@@ -198,6 +197,25 @@ namespace DSTM
                     {
                         Console.WriteLine(kvp.Key + " - " + kvp.Value);
                     }
+                    Console.WriteLine("----------");
+                }
+            }
+            else
+                Console.WriteLine("Empty!");
+        }
+
+        public static void ShowTxObjectsList(SortedDictionary<int, List<int>> txObjList)
+        {
+            Console.WriteLine("Tx - Object List:");
+            if (txObjList.Keys.Count > 0)
+            {
+                Console.WriteLine("txId : uid_1 uid_2 ...");
+                foreach (KeyValuePair<int, List<int>> kvp in txObjList)
+                {
+                    Console.Write(kvp.Key + " ");
+                    foreach (int uid in kvp.Value)
+                        Console.Write(uid + " ");
+                    Console.Write("\r\n");
                 }
             }
             else
