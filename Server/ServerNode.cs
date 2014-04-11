@@ -3,6 +3,7 @@ using System.Runtime.Remoting;
 using System.Runtime.Remoting.Channels.Tcp;
 using System.Runtime.Remoting.Channels;
 using System.Net.Sockets;
+using System.Threading;
 using System.Windows.Forms;
 using DSTM;
 using System.Collections.Generic;
@@ -105,6 +106,7 @@ namespace Server {
 
         //Pedidos pendentes (durante o freeze) para este servidor < nome do comando, lista de argumentos > 
         private Queue<Action> pendingCommands = new Queue<Action>();
+        private List<ManualResetEvent> _queuedThreads = new List<ManualResetEvent>();
 
         // estados em que o servidor pode estar
         enum State {Normal, Failed, Freezed};
@@ -262,6 +264,7 @@ namespace Server {
                 txCreatedObjList[txId].Add(uid);
             }
         }
+        
 
         //Client-Server
         public bool TxBegin(string clientAddressPort)
@@ -271,9 +274,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-               // pendingCommands.Enqueue(() => TxBegin(clientAddressPort));
-                pendingCommands.Enqueue(() => debugRecover("HELLO WORLD!"));
-                return false;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //Se o cliente ja tem 1 tx a decorrer
@@ -301,8 +304,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => CreatePadInt(clientAddressPort, uid));
-                return null;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //verifica se o client tem 1 tx aberta
@@ -354,8 +358,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => AccessPadInt(clientAddressPort, uid));
-                return null;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
 
@@ -407,8 +412,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => Read(clientAddressPort, uid));
-                return -1;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //verifica se o client tem 1 tx aberta
@@ -449,8 +455,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => Write(clientAddressPort, uid, value));
-                return;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //verifica se o client tem 1 tx aberta
@@ -490,8 +497,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => TxCommit(clientAddressPort));
-                return false;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //obtem a tx aberta
@@ -566,8 +574,9 @@ namespace Server {
                 throw new RemotingException("Server has failed!");
             else if (currentState == State.Freezed)
             {
-                pendingCommands.Enqueue(() => TxAbort(clientAddressPort));
-                return false;       //duvida o qq retorna quando o server esta freeze?
+                var mre = new ManualResetEvent(false);
+                _queuedThreads.Add(mre);
+                mre.WaitOne();
             }
 
             //obtem a tx aberta
@@ -736,7 +745,15 @@ namespace Server {
                 return false;
             else if (currentState == State.Freezed) 
             {
-                pendingCommands.Clear();
+                clients = new SortedDictionary<string, int>();
+                myPadInts = new SortedDictionary<int, PadIntInsider>();
+                servers = null;
+                mySInfo = new ServerInfo(0, 0, "");
+                txServersList = new SortedDictionary<int, List<string>>();
+                txObjList = new SortedDictionary<int, List<int>>();
+                txCreatedObjList = new SortedDictionary<int, List<int>>();
+
+                _queuedThreads.Clear();
                 currentState = State.Failed;
                 return true;
             }
@@ -754,7 +771,7 @@ namespace Server {
                 return false;
             else
             {
-                pendingCommands.Clear();
+                _queuedThreads.Clear();
                 currentState = State.Freezed;
                 return true;
             }
@@ -762,7 +779,7 @@ namespace Server {
 
         public bool Recover()
         {
-            if (currentState == State.Normal)    // Ja esta freezed, retorna false. Se estiver failed não deve responder a isto (so a recov)
+            if (currentState == State.Normal)    // Ja esta normal, nao ha recover a fazer
                 return false;
             else if (currentState == State.Freezed)
             {
@@ -784,10 +801,10 @@ namespace Server {
         {
             try
             {
-                while (pendingCommands.Count != 0)
+                for (int i = 0; i < _queuedThreads.Count; i++) // Acordar todas as threads adormecidas devido ao "recover"
                 {
-                    Action action = pendingCommands.Dequeue();
-                    action();
+                    ManualResetEvent mre = _queuedThreads[i];
+                    mre.Set();
                 }
                 return true;
             }
@@ -811,12 +828,6 @@ namespace Server {
             DstmUtil.ShowClientsList(clients);
             DstmUtil.ShowTxServersList(txServersList);
             DstmUtil.ShowTxObjectsList(txObjList);
-        }
-
-        // DEBUG METHOD ---- TO BE DELETED LATER
-        public void debugRecover(string s)
-        {
-            Console.WriteLine(s);
         }
 
     }
