@@ -112,7 +112,7 @@ namespace DSTM
         //METODOS PARA O STATUS
         public static void ShowServerList(SortedDictionary<int, ServerInfo> servers)
         {
-            Console.WriteLine("Servers List");
+            Console.WriteLine("=== Servers List (One-Hop) ===");
             if (servers.Count > 0)
             {
                 Console.WriteLine("begin-end | Server");
@@ -127,7 +127,7 @@ namespace DSTM
 
         public static void ShowClientsList(SortedDictionary<string, int> clients)
         {
-            Console.WriteLine("Clients List");
+            Console.WriteLine("=== Clients List (Coordinator) ===");
             if (clients.Count > 0)
             {
                 Console.WriteLine("Client | TxId");
@@ -142,7 +142,7 @@ namespace DSTM
 
         public static void ShowTxServersList(SortedDictionary<int, List<string>> txServersList)
         {
-            Console.WriteLine("Tx - Servers List");
+            Console.WriteLine("=== Tx-Servers List (Coordinator) ===");
             if (txServersList.Count > 0)
             {
                 Console.WriteLine("txId : server_1 server_2 ...");
@@ -160,7 +160,7 @@ namespace DSTM
 
         public static void ShowQueue(Queue<string> queue)
         {
-            Console.WriteLine("Servers Queue:");
+            Console.WriteLine("=== Servers Queue (Master) ===");
 
             string[] contents = queue.ToArray();
             if (contents.Length > 0)
@@ -176,7 +176,7 @@ namespace DSTM
 
         public static void ShowPadIntsList(SortedDictionary<int, PadIntInsider> padints)
         {
-            Console.WriteLine("Padints List:");
+            Console.WriteLine("=== Padints List (Local) ===");
             if (padints.Count > 0)
             {
                 foreach (PadIntInsider padint in padints.Values)
@@ -191,12 +191,19 @@ namespace DSTM
                     {
                         Console.Write(txid + " ");
                     }
-                    Console.Write("\r\n");
+                    if (padint.TENTREADS.Count > 0)
+                        Console.Write("\r\n");
+                    else
+                        Console.WriteLine("Empty!");
                     Console.WriteLine("Tentative writes (txid - value list): ");
                     foreach (KeyValuePair<int, int> kvp in padint.TENTWRITES)
                     {
-                        Console.WriteLine(kvp.Key + " - " + kvp.Value);
+                        Console.Write(kvp.Key + " - " + kvp.Value + "  ");
                     }
+                    if (padint.TENTWRITES.Count > 0)
+                        Console.Write("\r\n");
+                    else
+                        Console.WriteLine("Empty!");
                     Console.WriteLine("----------");
                 }
             }
@@ -206,7 +213,7 @@ namespace DSTM
 
         public static void ShowTxObjectsList(SortedDictionary<int, List<int>> txObjList)
         {
-            Console.WriteLine("Tx - Object List:");
+            Console.WriteLine("=== Tx-Object List (Responsible) ===");
             if (txObjList.Keys.Count > 0)
             {
                 Console.WriteLine("txId : uid_1 uid_2 ...");
@@ -220,6 +227,30 @@ namespace DSTM
             }
             else
                 Console.WriteLine("Empty!");
+        }
+
+        public static void ShowTxCreatedObjectsList(SortedDictionary<int, List<int>> txCreatedObjList)
+        {
+            Console.WriteLine("=== Tx-Created Object List (Responsible) ===");
+            if (txCreatedObjList.Keys.Count > 0)
+            {
+                Console.WriteLine("txId : uid_1 uid_2 ...");
+                foreach (KeyValuePair<int, List<int>> kvp in txCreatedObjList)
+                {
+                    Console.Write(kvp.Key + " ");
+                    foreach (int uid in kvp.Value)
+                        Console.Write(uid + " ");
+                    Console.Write("\r\n");
+                }
+            }
+            else
+                Console.WriteLine("Empty!");
+        }
+
+        public static void ShowServerIntervals(ServerInfo sInfo)
+        {
+            Console.WriteLine("=== My interval ===");
+            Console.WriteLine("[" + sInfo.getBegin() + ", " + sInfo.getEnd() + "]");
         }
 
     }

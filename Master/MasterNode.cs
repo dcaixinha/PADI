@@ -29,50 +29,66 @@ namespace Master {
 
         private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >
 
+        //Locks
+        private Object registerServerLock = new Object();
+        private Object txIdLock = new Object();
+        private Object BootstrapClientLock = new Object();
+        private Object StatusLock = new Object();
 
         public SortedDictionary<int, ServerInfo> RegisterServer(string serverAddrPort)
         {
-            if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
+            lock (registerServerLock)
             {
-                roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
-                DstmUtil.InsertServer(serverAddrPort, servers, null);
-                Console.WriteLine("Registered: " + serverAddrPort);
+                if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
+                {
+                    roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
+                    DstmUtil.InsertServer(serverAddrPort, servers, null);
+                    Console.WriteLine("Registered: " + serverAddrPort);
 
-                return servers;
+                    return servers;
+                }
             }
             return null;
         }
 
         public int getTxId()
         {
-            return ++txIdCounter;
+            lock (txIdLock)
+            {
+                return ++txIdCounter;
+            }
         }
 
         //Client calls this to bootstrap himself and get a server
         public string BootstrapClient(string addrPort)
         {
-            string serverAddrPort = roundRobin.Dequeue();
-            roundRobin.Enqueue(serverAddrPort);
-            return serverAddrPort;
+            lock (BootstrapClientLock)
+            {
+                string serverAddrPort = roundRobin.Dequeue();
+                roundRobin.Enqueue(serverAddrPort);
+                return serverAddrPort;
+            }
         }
 
         //Client calls this to show status
         public void Status()
         {
-            printSelfStatus();
-            //Contacta todos os servidores para lhes pedir para mostrar o status
-            foreach (ServerInfo sInfo in servers.Values)
+            lock (StatusLock)
             {
-                string server = sInfo.getPortAddress();
-                try
+                printSelfStatus();
+                //Contacta todos os servidores para lhes pedir para mostrar o status
+                foreach (ServerInfo sInfo in servers.Values)
                 {
-                    IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
-                        "tcp://" + server + "/Server");
-                    serv.printSelfStatus();
+                    string server = sInfo.getPortAddress();
+                    try
+                    {
+                        IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
+                            "tcp://" + server + "/Server");
+                        serv.printSelfStatus();
+                    }
+                    catch (Exception e) { Console.WriteLine(e); }
                 }
-                catch (Exception e) { Console.WriteLine(e); }
             }
-
         }
 
         private void printSelfStatus(){
