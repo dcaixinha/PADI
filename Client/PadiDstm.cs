@@ -7,7 +7,7 @@ using System.Windows.Forms;
 using PADI_DSTM;
 using System.Collections.Generic;
 
-namespace Client
+namespace PADI_DSTM
 {
     public class PadiDstm //previously ClientNode
     {
