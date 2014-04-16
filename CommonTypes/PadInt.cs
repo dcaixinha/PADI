@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace DSTM
+namespace PADI_DSTM
 {
     //Classe proxy que faz a interaçao entre o client e o coordenador
     [Serializable]

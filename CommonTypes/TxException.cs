@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace DSTM
+namespace PADI_DSTM
 {
     [Serializable]
     public class TxException : ApplicationException

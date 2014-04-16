@@ -3,7 +3,7 @@ using System.Runtime.Remoting;
 using System.Runtime.Remoting.Channels;
 using System.Runtime.Remoting.Channels.Tcp;
 using System.Collections.Generic;
-using DSTM;
+using PADI_DSTM;
 
 namespace Master {
 

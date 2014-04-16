@@ -7,7 +7,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace DSTM
+namespace PADI_DSTM
 {
     [Serializable]
     public class PadIntInsider

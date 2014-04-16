@@ -4,29 +4,29 @@ using System.Runtime.Remoting.Channels.Tcp;
 using System.Runtime.Remoting.Channels;
 using System.Net.Sockets;
 using System.Windows.Forms;
-using DSTM;
+using PADI_DSTM;
 using System.Collections.Generic;
 
 namespace Client
 {
-    public class ClientNode
+    public class PadiDstm //previously ClientNode
     {
         public static IServerClient serverObj; //inicializado na resposta ao bootstrap
         public static IMasterClient masterObj; //inicializado durante o bootstrap. Usado para os fails, freezes, etc.
         public static string masterAddrPort = "localhost:8086";
-        string address = DstmUtil.LocalIPAddress();
-        string porto;
-        string myself;
-        TcpChannel channel;
+        static string address = DstmUtil.LocalIPAddress();
+        static string porto = getRandomPort();
+        static string myself = address + ":" + porto;
+        static TcpChannel channel;
 
-        public ClientNode()
-        {
-            porto = getRandomPort();
-            myself = address + ":" + porto;
-        }
+        //public ClientNode()
+        //{
+        //    porto = 
+        //    myself = 
+        //}
 
         //Metodo interno que gera um porto aleatorio para o cliente
-        private string getRandomPort()
+        private static string getRandomPort()
         {
             Random random = new Random();
             return random.Next(1024, 65535).ToString();
@@ -35,7 +35,7 @@ namespace Client
         //Metodo que desliga o channel
         //Usado para nos testes podermos abrir o canal sempre que eh inicializada a library, depois
         //de outro teste ja ter aberto um canal. No final de cada teste este metodo eh chamado.
-        public void CloseChannel()
+        public static void CloseChannel()
         {
             channel.StopListening(null);
             ChannelServices.UnregisterChannel(channel);
@@ -43,7 +43,7 @@ namespace Client
         }
 
         //INIT
-        public bool Init()
+        public static bool Init()
         {
             try
             {   //Cria o seu canal num porto aleatorio
@@ -56,7 +56,7 @@ namespace Client
             //Faz bootstrap no master
             try{
                 masterObj = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
-                    "tcp://" + ClientNode.masterAddrPort + "/Master");
+                    "tcp://" + PadiDstm.masterAddrPort + "/Master");
 
                 string serverAddrPort = masterObj.BootstrapClient(myself);
                 serverObj = (IServerClient)Activator.GetObject(
@@ -80,7 +80,7 @@ namespace Client
 
         //TX BEGIN
         /// <exception cref="TxException"></exception>
-        public bool TxBegin()
+        public static bool TxBegin()
         {
             try
             {
@@ -99,7 +99,7 @@ namespace Client
         }
 
         //Creates a new shared object with the given uid. Returns null if the object already exists.
-        public PadInt CreatePadInt(int uid)
+        public static PadInt CreatePadInt(int uid)
         {
             try
             {
@@ -111,7 +111,7 @@ namespace Client
         }
 
         //Returns a reference to a shared object with the given uid. Returns null if the object does not exist.
-        public PadInt AccessPadInt(int uid)
+        public static PadInt AccessPadInt(int uid)
         {
             try
             {
@@ -121,7 +121,7 @@ namespace Client
             catch (TxException) { throw; }
         }
 
-        public bool TxCommit()
+        public static bool TxCommit()
         {
             try
             {
@@ -131,7 +131,7 @@ namespace Client
             catch (TxException) { throw; }
         }
 
-        public bool TxAbort()
+        public static bool TxAbort()
         {
             try
             {
@@ -141,7 +141,7 @@ namespace Client
             catch (TxException) { throw; }
         }
 
-        public bool Status()
+        public static bool Status()
         {
             try
             {
@@ -151,7 +151,7 @@ namespace Client
             catch (Exception){ throw; }
         }
 
-        public bool Fail(string serverURL)
+        public static bool Fail(string serverURL)
         {
             try
             {
@@ -173,7 +173,7 @@ namespace Client
             }
         }
 
-        public bool Freeze(string serverURL)
+        public static bool Freeze(string serverURL)
         {
 
             try
@@ -196,7 +196,7 @@ namespace Client
             }
         }
 
-        public bool Recover(string serverURL)
+        public static bool Recover(string serverURL)
         {
             try
             {
@@ -220,7 +220,7 @@ namespace Client
 
         static void Main()
         {
-            ClientNode cn = new ClientNode();
+            PadiDstm cn = new PadiDstm();
             string input;
             Console.WriteLine("Commands:");
             Console.WriteLine("init | txbegin | recover | create <uid>");
@@ -228,18 +228,18 @@ namespace Client
             {
                 input = Console.ReadLine();
                 if (input.Equals("init"))
-                    cn.Init();
+                    Init();
                 else if (input.Equals("txbegin"))
-                    cn.TxBegin();
+                    TxBegin();
                 else if (input.Equals("recover"))
-                    cn.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server"); // Para o freeze server test, pois tem de ser outra instancia a fazer o recov.
+                    Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server"); // Para o freeze server test, pois tem de ser outra instancia a fazer o recov.
                 else if (input.StartsWith("create")) //create <uid>
                 {
                     string[] words = input.Split(' ');
                     int uid = Convert.ToInt32(words[1]);
                     try
                     {
-                        PadInt padint = cn.CreatePadInt(uid);
+                        PadInt padint = CreatePadInt(uid);
                         Console.WriteLine(padint.Read());
                     }
                     catch (TxException e) { Console.WriteLine(e.reason); }

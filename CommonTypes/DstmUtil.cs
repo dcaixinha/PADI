@@ -5,7 +5,7 @@ using System.Text;
 using System.Net;
 using System.Net.Sockets;
 
-namespace DSTM
+namespace PADI_DSTM
 {
     public static class DstmUtil
     {

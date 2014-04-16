@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DSTM
+namespace PADI_DSTM
 {
     class Murmur3
     {

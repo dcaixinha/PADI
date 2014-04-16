@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.Threading;
 
 using Client;
-using DSTM;
+using PADI_DSTM;
 
 namespace PadintTests
 {
@@ -15,12 +15,11 @@ namespace PadintTests
         public void startReadOwnWritesAndAbort()
         {
             Console.WriteLine("startReadOwnWritesBeforeCommit");
-            ClientNode cn = new ClientNode();
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 24;
             int value = 6;
@@ -28,7 +27,7 @@ namespace PadintTests
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                PadInt padint = cn.CreatePadInt(uid);
+                PadInt padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
@@ -40,9 +39,9 @@ namespace PadintTests
                     Console.WriteLine("TEST PASSED!\r\n");
                 else Console.WriteLine("FAILED!\r\n");
 
-                cn.TxAbort();
+                PadiDstm.TxAbort();
 
-                cn.CloseChannel();
+                PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
@@ -51,34 +50,33 @@ namespace PadintTests
         public void startReadOwnWritesAfterCommit()
         {
             Console.WriteLine("startReadOwnWritesAfterCommit");
-            ClientNode cn = new ClientNode();
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 31;
             int value = 9;
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                PadInt padint = cn.CreatePadInt(uid);
+                PadInt padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
 
                 Console.WriteLine("Committing...");
-                cn.TxCommit();
+                PadiDstm.TxCommit();
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
             try
             {
                 Console.WriteLine("AccessPadint " + uid + "...");
-                PadInt padint = cn.AccessPadInt(uid);
+                PadInt padint = PadiDstm.AccessPadInt(uid);
 
                 Console.WriteLine("Reading value (should be " + value + ")...");
                 int obtained = padint.Read();
@@ -87,7 +85,7 @@ namespace PadintTests
                     Console.WriteLine("TEST PASSED!\r\n");
                 else Console.WriteLine("FAILED!\r\n");
 
-                cn.CloseChannel();
+                PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
@@ -96,12 +94,11 @@ namespace PadintTests
         public void startCanNotAccessAfterAbort()
         {
             Console.WriteLine("startCanNotAccessAfterAbort");
-            ClientNode cn = new ClientNode();
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 3000;
             int value = 77;
@@ -110,31 +107,31 @@ namespace PadintTests
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                padint = cn.CreatePadInt(uid);
+                padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
 
                 Console.WriteLine("Aborting...");
-                cn.TxAbort();
+                PadiDstm.TxAbort();
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             padint = null;
             try
             {
                 Console.WriteLine("AccessPadint " + uid + "...");
-                padint = cn.AccessPadInt(uid);
+                padint = PadiDstm.AccessPadInt(uid);
             }
             catch (TxException) { //It should throw a txException
                 Console.WriteLine("TEST PASSED!\r\n");
             } finally{
                 if(padint!=null)
                     Console.WriteLine("FAILED!\r\n");
-                cn.CloseChannel();
+                PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
         }
@@ -142,34 +139,33 @@ namespace PadintTests
         public void failServerTest()
         {
             Console.WriteLine("failServerTest");
-            ClientNode cn = new ClientNode();
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 21;
             int value = 17;
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                PadInt padint = cn.CreatePadInt(uid);
+                PadInt padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
 
                 Console.WriteLine("Committing...");
-                cn.TxCommit();
+                PadiDstm.TxCommit();
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
             try
             {
                 Console.WriteLine("Failing Server " + DstmUtil.LocalIPAddress() + ":4001" + "...");
-                bool res = cn.Fail("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
+                bool res = PadiDstm.Fail("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
                 if (!res)
                 {
                     Console.WriteLine("TEST FAILED!\r\n");
@@ -177,18 +173,18 @@ namespace PadintTests
                 }
  
                 Console.WriteLine("AccessPadint " + uid + "...");
-                PadInt padint = cn.AccessPadInt(uid);
+                PadInt padint = PadiDstm.AccessPadInt(uid);
 
                 Console.WriteLine("TEST FAILED!\r\n");  // Se chegar aqui o teste falhou, devia ter gerado uma exception
 
-                cn.CloseChannel();
+                PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
             catch (System.Runtime.Remoting.RemotingException) 
             {
-                cn.CloseChannel();
-                cn.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");       // Repor o estado do servidor...
+                PadiDstm.CloseChannel();
+                PadiDstm.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");       // Repor o estado do servidor...
                 Console.WriteLine("Caught remoting exception!");
                 Console.WriteLine("TEST PASSED!\r\n"); 
             }
@@ -198,38 +194,37 @@ namespace PadintTests
         public void freezeServerTest()
         {
             Console.WriteLine("freezeServerTest");
-            ClientNode cn = new ClientNode();
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 23;
             int value = 13;
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                PadInt padint = cn.CreatePadInt(uid);
+                PadInt padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
 
                 Console.WriteLine("Committing...");
-                cn.TxCommit();
+                PadiDstm.TxCommit();
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             try
             {
                 Console.WriteLine("TxBegin...");
-                cn.TxBegin();
+                PadiDstm.TxBegin();
 
                 Console.WriteLine("AccessPadint " + uid + "...");
-                PadInt padint = cn.AccessPadInt(uid);
+                PadInt padint = PadiDstm.AccessPadInt(uid);
                 
                 Console.WriteLine("Freezing Server " + DstmUtil.LocalIPAddress() + ":4001" + "...");
-                bool res = cn.Freeze("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
+                bool res = PadiDstm.Freeze("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
                 if (!res)
                 {
                     Console.WriteLine("TEST FAILED!\r\n");
@@ -252,7 +247,7 @@ namespace PadintTests
                 //Console.WriteLine("Recovering Server...");
                 //bool recvResult = cn.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
 
-                cn.CloseChannel();
+                PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
@@ -265,41 +260,36 @@ namespace PadintTests
         public void testRedistribution()
         {
             Console.WriteLine("testStatus");
-            ClientNode cn = new ClientNode();
 
             Console.WriteLine("Register 2 servers and press any key...");
             Console.ReadLine();
 
             Console.WriteLine("Init...");
-            cn.Init();
+            PadiDstm.Init();
 
             Console.WriteLine("TxBegin...");
-            cn.TxBegin();
+            PadiDstm.TxBegin();
 
             int uid = 0;
             int value = 4;
             try
             {
                 Console.WriteLine("CreatePadint " + uid + "...");
-                PadInt padint = cn.CreatePadInt(uid);
+                PadInt padint = PadiDstm.CreatePadInt(uid);
 
                 Console.WriteLine("Writing value " + value + "...");
                 padint.Write(value);
-
-                //Console.WriteLine("Committing...");
-                //cn.TxCommit();
-                //Thread.Sleep(2000);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             Console.WriteLine("Status...");
-            cn.Status();
+            PadiDstm.Status();
 
             Console.WriteLine("Now register 2 more servers and press any key...");
             Console.ReadLine();
 
             Console.WriteLine("Status...");
-            cn.Status();
+            PadiDstm.Status();
 
             Console.WriteLine("Check that padint 0 was redistributed from server 1 to serverr 4...");
             Console.WriteLine("Check that server 1 is still the coordinator (as the tx has not committed or aborted)...");
@@ -311,16 +301,16 @@ namespace PadintTests
             Console.WriteLine("Committing...");
             try
             {
-                cn.TxCommit();
+                PadiDstm.TxCommit();
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
             Console.WriteLine("Status...");
-            cn.Status();
+            PadiDstm.Status();
 
             Console.WriteLine("Tentative writes should be empty, committed write should have the values...");
 
-            cn.CloseChannel();
+            PadiDstm.CloseChannel();
             Thread.Sleep(2000);
         }
 
