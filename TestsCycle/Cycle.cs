@@ -13,12 +13,14 @@ class Cicle {
         try{
             if ((args.Length > 0) && (args[0].Equals("C"))) {
                 res = PadiDstm.TxBegin();
+                Console.WriteLine("Result from txBegin: " + res);
                 PadInt pi_a = PadiDstm.CreatePadInt(2);
                 PadInt pi_b = PadiDstm.CreatePadInt(2000000001);
                 PadInt pi_c = PadiDstm.CreatePadInt(1000000000);
                 pi_a.Write(0);
                 pi_b.Write(0);
                 res = PadiDstm.TxCommit();
+                Console.WriteLine("Result from txCommit: " + res);
             }
             Console.WriteLine("####################################################################");
             Console.WriteLine("Finished creating PadInts. Press enter for 300 R/W transaction cycle.");
@@ -35,19 +37,24 @@ class Cicle {
         for (int i = 0; i < 300; i++) {
             try {
                 res = PadiDstm.TxBegin();
+                Console.Write(".");
+                res = false; //############################IA AQUI TESTAR ISTO
                 PadInt pi_d = PadiDstm.AccessPadInt(2);
                 PadInt pi_e = PadiDstm.AccessPadInt(2000000001);
                 PadInt pi_f = PadiDstm.AccessPadInt(1000000000);
                 int d = pi_d.Read();
+                Console.Write(".");
                 d++;
                 pi_d.Write(d);
                 int e = pi_e.Read();
+                Console.Write(".");
                 e++;
                 pi_e.Write(e);
                 int f = pi_f.Read();
+                Console.Write(".");
                 f++;
                 pi_f.Write(f);
-                Console.Write(".");
+                Console.Write(f+".");
                 res = PadiDstm.TxCommit();
                 if (res) { committed++; Console.Write("."); } else {
                     aborted++;
@@ -72,6 +79,7 @@ class Cicle {
 
         try{
             res = PadiDstm.TxBegin();
+            res = false;
             PadInt pi_g = PadiDstm.AccessPadInt(2);
             PadInt pi_h = PadiDstm.AccessPadInt(2000000001);
             PadInt pi_j = PadiDstm.AccessPadInt(1000000000);

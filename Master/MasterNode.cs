@@ -24,6 +24,11 @@ namespace Master {
     //Objecto remoto do master, atraves do qual os servidores o contactam
     public class Master : MarshalByRefObject, IMasterClient, IMasterServer
     {
+        public override object InitializeLifetimeService()
+        {
+            return null;
+        }
+
         private Queue<string> roundRobin = new Queue<string>();
         private int txIdCounter = 0;
 

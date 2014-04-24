@@ -113,6 +113,8 @@ class CrossedLocks
             Console.WriteLine("commit = " + res + " . Press enter for exit.");
             Console.WriteLine("####################################################################");
             Console.ReadLine();
+            if (args[0].Equals("B"))
+                PadiDstm.Status();
         }
         catch (Exception e)
         {

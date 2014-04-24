@@ -81,6 +81,11 @@ namespace Server {
     //Objecto remoto dos servidores, atraves do qual o master envia respostas
     public class Server : MarshalByRefObject, IServerClient, IServerServer, IServerMaster
     {
+        public override object InitializeLifetimeService()
+        {
+            return null;
+        }
+
         private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         
@@ -705,18 +710,43 @@ namespace Server {
 
         //Server-Server
         public int Read(int uid, int txId) {
+
+            //lock (txLock)
+            //{
+            //    //search for the padint
+            //    PadIntInsider padint;
+            //    bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
+            //    if (hasPadInt)
+            //    {
+            //        int result = padint.Read(txId);
+            //        return result;
+            //    }
+            //    else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
+            //}
+
+            bool hasPadInt;
+            //search for the padint
+            PadIntInsider padint;
             lock (txLock)
             {
-                //search for the padint
-                PadIntInsider padint;
-                bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
-                if (hasPadInt)
-                {
-                    int result = padint.Read(txId);
-                    return result;
-                }
-                else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
+                hasPadInt = myPadInts.TryGetValue(uid, out padint);
             }
+            if (hasPadInt)
+            {
+                int result = -4;
+                while (result == -4) //espera q a tx anterior faca abort ou commit
+                {
+                    lock (txLock)
+                    {
+                        result = padint.Read(txId);
+                    }
+                    if (result == -4)
+                        System.Threading.Thread.Sleep(50);
+                }
+                return result;
+            }
+            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
+            
         }
 
         //Server-Server
@@ -741,6 +771,7 @@ namespace Server {
         {
             lock (txLock)
             {
+                bool result;
                 //get the objects used in this txId
                 List<int> uids = txObjList[txId];
 
@@ -748,7 +779,9 @@ namespace Server {
                 foreach (int uid in uids)
                 {
                     PadIntInsider obj = myPadInts[uid];
-                    obj.CanCommit(txId);
+                    result = obj.CanCommit(txId);
+                    if (result == false)
+                        return false;
                 }
                 return true;
             }
@@ -787,7 +820,7 @@ namespace Server {
                 {
                     //for each of these objects:
                     PadIntInsider obj = myPadInts[uid];
-                    obj.Abort();
+                    obj.Abort(txId);
                 }
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txObjList.Remove(txId);
