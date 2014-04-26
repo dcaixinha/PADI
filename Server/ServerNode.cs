@@ -565,8 +565,9 @@ namespace Server {
                 }
                 else
                 {
-                    CanCommit(txId);
-                    numWaitingResponse--; //Nao fica ah espera de si mesmo
+                    canCommit = CanCommit(txId);
+                    if (canCommit)
+                        numWaitingResponse--;
                 }
             }
             //Se todos responderam ao canCommit: Envio dos commits a todos
@@ -790,17 +791,34 @@ namespace Server {
         //Server-Server
         public void Commit(int txId)
         {
+            int result;
+            List<int> uids;
             lock (txLock)
             {
                 //get the objects used in this txId
-                List<int> uids = txObjList[txId];
-
-                foreach (int uid in uids)
+                uids = txObjList[txId];
+            }
+            PadIntInsider obj;
+            foreach (int uid in uids)
+            {
+                lock (txLock)
                 {
                     //for each of these objects:
-                    PadIntInsider obj = myPadInts[uid];
-                    obj.Commit();
+                    obj = myPadInts[uid];
+                    result = obj.Commit(txId);
                 }
+                while (result == -4)
+                {
+                    lock (txLock)
+                    {
+                        result = obj.Commit(txId);
+                    }
+                    if (result == -4)
+                        System.Threading.Thread.Sleep(50);
+                }
+            }
+            lock (txLock)
+            {
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txObjList.Remove(txId);
                 //Limpa a lista dos objectos que ele criou para esta tx

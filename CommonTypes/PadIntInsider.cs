@@ -78,15 +78,15 @@ namespace PADI_DSTM
                 {
                     //Wait until the tentative write commits or aborts, then reapply the read rule 
 
-                    //Console.WriteLine("########################################");
-                    //Console.WriteLine("========================================");
-                    //Console.WriteLine("txId: " + txId);
-                    //Console.WriteLine("Num of tentative writes: " + tentativeWrites.Count);
-                    //if (tentativeWrites.Count > 0)
-                    //    Console.WriteLine("max tentative write: " + tentativeWrites.Keys.Max());
-                    //Console.WriteLine("committedWrite: " + committedWrite.Item1);
-                    //Console.WriteLine("========================================");
-                    //Console.WriteLine("########################################");
+                    Console.WriteLine("########################################");
+                    Console.WriteLine("========================================");
+                    Console.WriteLine("txId: " + txId);
+                    Console.WriteLine("Num of tentative writes: " + tentativeWrites.Count);
+                    if (tentativeWrites.Count > 0)
+                        Console.WriteLine("max tentative write: " + tentativeWrites.Keys.Max());
+                    Console.WriteLine("committedWrite: " + committedWrite.Item1);
+                    Console.WriteLine("========================================");
+                    Console.WriteLine("########################################");
 
                     //This value will be tested on the server who calls this method,
                     //and if it returns -4 it will lock try to read again and unlock
@@ -130,26 +130,47 @@ namespace PADI_DSTM
             }
         }
 
+        //Metodo interno
+        private int getMaxReadTimestamp()
+        {
+            if (tentativeReads.Count > 0)
+                return tentativeReads.Max();
+            else return committedRead;
+        }
+
         public void Write(int txId, int value)
         {
             //check if the maximum read timestamp on that is lower and if write committed is lower
-            if (txId > committedRead && txId > committedWrite.Item1)
-            {
-                //write a new tentative read
-                tentativeWrites.Add(txId, value);
+            if (txId >= getMaxReadTimestamp()){
+                if (txId > committedWrite.Item1)
+                    //write a new tentative read
+                    tentativeWrites.Add(txId, value);
+                //else if(txId < committedWrite.Item1) { } //Ignore Obsolete Write Rule
             }
             else
                 //Abort transaction Tc <- nos slides (mas aqui podemos lançar excepçao axo eu..)
                 throw new TxException("Tx "+ txId +" chegou tarde demais ao recurso, nao pôde escrever!");
         }
 
+        //2PC por default respondem sempre yes. Se for a baixo sera lancada 1 excepcao
         public bool CanCommit(int txId)
         {
-            //if it already answered positively to a canCommit
-            if (temporaryRead != -1 || temporaryWrite != null)
-                return false; 
-           
-            if (tentativeReads.Contains(txId)) 
+            return true;
+        }
+
+        //Verifica se eh a tx com o id mais baixo, se nao for tem que esperar pelas outras
+        //TODO: Temporary values can be removed, if we don't move the code back up to canCommit
+        public int Commit(int txId)
+        {
+            //Esperar até poder mesmo fazer commit
+            int dSelected = GetMaxValueLowerThan(txId);
+            //if there's no tentative writes lower than us
+            if (dSelected > txId) //so se o meu tentative write for o mais baixo eh q faço commit, senao espero
+            {
+                return -4;
+            }
+
+            if (tentativeReads.Contains(txId))
             {
                 //store temporarily the old committed value and the committed TxID
                 temporaryRead = committedRead;
@@ -168,16 +189,12 @@ namespace PADI_DSTM
                 //Then remove the TxID from the tentative table
                 tentativeWrites.Remove(txId);
             }
-            return true;
-        }
 
-        //Nao precisa de argumentos, pq se ja respondeu yes ao canCommit, entao vai fazer commit sobre essa
-        //e ira responder nao a canCommits de outros
-        public void Commit()
-        { 
             //the temporary values can be discarded, and that's it
             temporaryWrite = null;
             temporaryRead = -1;
+
+            return 1;
         }
 
         public void Abort(int txId)
