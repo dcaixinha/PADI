@@ -119,10 +119,11 @@ namespace Server {
         private State currentState = State.Normal;
 
         //Locks
-        private Object serverLock = new Object(); //this lock protects access to clients and servers tables
-        private Object txLock = new Object(); //protects all tx tables and padints
         private Object stateLock = new Object(); //protects the state
-
+        private Object serverLock = new Object(); //this lock protects access to clients and servers tables
+        private Object txLock = new Object(); //protects all tx tables (and padints -> not anymore)
+        private ReaderWriterLockSlim padintsLock = new ReaderWriterLockSlim();
+        private Dictionary<int, Object> padintLocks = new Dictionary<int, Object>(); //this will be protected by txLock
 
         public string GetAddress() { return myself; }
 
@@ -674,7 +675,18 @@ namespace Server {
                 //Adiciona o novo padint ah sua lista de padints
                 PadIntInsider novo = new PadIntInsider(uid);
                 myPadInts.Add(uid, novo);
-
+            }
+            //Cria o lock para este padint
+            padintsLock.EnterWriteLock();
+            try
+            {
+                padintLocks[uid] = new Object();
+            }
+            finally
+            {
+                padintsLock.ExitWriteLock();
+            }
+            lock(txLock){
                 //Actualiza a sua lista de objectos que participam nesta tx
                 if (!txObjList.ContainsKey(txId))
                     txObjList.Add(txId, new List<int>());
@@ -712,19 +724,6 @@ namespace Server {
         //Server-Server
         public int Read(int uid, int txId) {
 
-            //lock (txLock)
-            //{
-            //    //search for the padint
-            //    PadIntInsider padint;
-            //    bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
-            //    if (hasPadInt)
-            //    {
-            //        int result = padint.Read(txId);
-            //        return result;
-            //    }
-            //    else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
-            //}
-
             bool hasPadInt;
             //search for the padint
             PadIntInsider padint;
@@ -734,15 +733,25 @@ namespace Server {
             }
             if (hasPadInt)
             {
+                Object padintLock;
+                padintsLock.EnterReadLock();
+                try
+                {
+                    padintLock = padintLocks[uid];
+                }
+                finally
+                {
+                    padintsLock.ExitReadLock();
+                }
                 int result = -4;
                 while (result == -4) //espera q a tx anterior faca abort ou commit
                 {
-                    lock (txLock)
+                    lock (padintLock)
                     {
                         result = padint.Read(txId);
                     }
                     if (result == -4)
-                        System.Threading.Thread.Sleep(50);
+                        System.Threading.Thread.Sleep(250);
                 }
                 return result;
             }
@@ -752,40 +761,72 @@ namespace Server {
 
         //Server-Server
         public void Write(int uid, int txId, int value) {
+            PadIntInsider padint;
+            bool hasPadInt;
+            Object padintLock;
             lock (txLock)
             {
                 //search for the padint
-                PadIntInsider padint;
-                bool hasPadInt = myPadInts.TryGetValue(uid, out padint);
-                if (hasPadInt)
+                hasPadInt = myPadInts.TryGetValue(uid, out padint);
+            }
+            padintsLock.EnterReadLock();
+            try
+            {
+                padintLock = padintLocks[uid];
+            }
+            finally
+            {
+                padintsLock.ExitReadLock();
+            }
+            if (hasPadInt)
+            {
+                lock (padintLock)
                 {
                     padint.Write(txId, value);
-                    //returns immediately?
                 }
-                else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
             }
+            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
+            
         }
 
         //Server-Server
         //DUVIDA: em que situacao o canCommit retorna false?
         public bool CanCommit(int txId)
         {
+            bool result;
+            List<int> uids;
             lock (txLock)
             {
-                bool result;
                 //get the objects used in this txId
-                List<int> uids = txObjList[txId];
-
-                //for each of these objects:
-                foreach (int uid in uids)
-                {
-                    PadIntInsider obj = myPadInts[uid];
-                    result = obj.CanCommit(txId);
-                    if (result == false)
-                        return false;
-                }
-                return true;
+                uids = txObjList[txId];
             }
+            //for each of these objects:
+            foreach (int uid in uids)
+            {
+                Object padintLock;
+                PadIntInsider padint;
+                lock (txLock)
+                {
+                    padint = myPadInts[uid];
+                }
+                padintsLock.EnterReadLock();
+                try
+                {
+                    padintLock = padintLocks[uid];
+                }
+                finally
+                {
+                    padintsLock.ExitReadLock();
+                }
+                lock (padintLock)
+                {
+                    result = padint.CanCommit(txId);
+                }
+                if (result == false)
+                    return false;
+            }
+            return true;
+            
         }
 
         //Server-Server
@@ -798,23 +839,36 @@ namespace Server {
                 //get the objects used in this txId
                 uids = txObjList[txId];
             }
-            PadIntInsider obj;
+            Object padintLock;
+            PadIntInsider padint;
             foreach (int uid in uids)
             {
                 lock (txLock)
                 {
                     //for each of these objects:
-                    obj = myPadInts[uid];
-                    result = obj.Commit(txId);
+                    padint = myPadInts[uid];
+                }
+                padintsLock.EnterReadLock();
+                try
+                {
+                    padintLock = padintLocks[uid];
+                }
+                finally
+                {
+                    padintsLock.ExitReadLock();
+                }
+                lock (padintLock)
+                {
+                    result = padint.Commit(txId);
                 }
                 while (result == -4)
                 {
-                    lock (txLock)
+                    lock (padintLock)
                     {
-                        result = obj.Commit(txId);
+                        result = padint.Commit(txId);
                     }
                     if (result == -4)
-                        System.Threading.Thread.Sleep(50);
+                        System.Threading.Thread.Sleep(250);
                 }
             }
             lock (txLock)
@@ -829,17 +883,37 @@ namespace Server {
         //Server-Server
         public void Abort(int txId)
         {
+            List<int> uids;
             lock (txLock)
             {
                 //get the objects used in this txId
-                List<int> uids = txObjList[txId];
-
-                foreach (int uid in uids)
+                uids = txObjList[txId];
+            }
+            Object padintLock;
+            foreach (int uid in uids)
+            {
+                //for each of these objects:
+                PadIntInsider padint;
+                lock (txLock)
                 {
-                    //for each of these objects:
-                    PadIntInsider obj = myPadInts[uid];
-                    obj.Abort(txId);
+                    padint = myPadInts[uid];
                 }
+                padintsLock.EnterReadLock();
+                try
+                {
+                    padintLock = padintLocks[uid];
+                }
+                finally
+                {
+                    padintsLock.ExitReadLock();
+                }
+                lock (padintLock)
+                {
+                    padint.Abort(txId);
+                }
+            }
+            
+            lock(txLock){
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txObjList.Remove(txId);
                 //Para cada objecto que criou (se criou algum!) no contexto desta tx, remove-o
