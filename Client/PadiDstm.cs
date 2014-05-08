@@ -231,9 +231,10 @@ namespace PADI_DSTM
                     Init();
                 else if (input.Equals("txbegin"))
                     TxBegin();
-                else if (input.Equals("recover"))
-                    Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server"); // Para o freeze server test, pois tem de ser outra instancia a fazer o recov.
-                else if (input.StartsWith("create")) //create <uid>
+                else if (input.StartsWith("recover")){
+                    string port = input.Split(' ')[1];
+                    Recover("tcp://" + DstmUtil.LocalIPAddress() + ":" + port + "/Server"); // Para o freeze server test, pois tem de ser outra instancia a fazer o recov.
+                }else if (input.StartsWith("create")) //create <uid>
                 {
                     string[] words = input.Split(' ');
                     int uid = Convert.ToInt32(words[1]);

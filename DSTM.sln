@@ -20,6 +20,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsCycle", "TestsCycle\Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsSampleApp", "TestsSampleApp\TestsSampleApp.csproj", "{2391DC3E-2A07-46B8-999E-15E292E55841}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerEntryWithOne", "TestsServerEntryWithOne\TestsServerEntryWithOne.csproj", "{22A36599-72BB-4626-8FC4-38B5374CCC25}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerEntryWithTwoFreeze", "TestsServerEntryWithTwoFreeze\TestsServerEntryWithTwoFreeze.csproj", "{C9F90707-A57B-42C8-B9ED-5A9086A0345C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -62,6 +66,14 @@ Global
 		{2391DC3E-2A07-46B8-999E-15E292E55841}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2391DC3E-2A07-46B8-999E-15E292E55841}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2391DC3E-2A07-46B8-999E-15E292E55841}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22A36599-72BB-4626-8FC4-38B5374CCC25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22A36599-72BB-4626-8FC4-38B5374CCC25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22A36599-72BB-4626-8FC4-38B5374CCC25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22A36599-72BB-4626-8FC4-38B5374CCC25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

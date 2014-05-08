@@ -44,9 +44,10 @@ namespace Server {
             this.myself = address + ":" + porto;
 
             //O servidor regista-se no master
-            servers = masterObj.RegisterServer(myself);
+            MasterPackage pack = masterObj.RegisterServer(myself);
+            servers = pack.getServers();
             //Actualiza o seu objecto remoto
-            serv.UpdateServerList(myself, servers);
+            serv.UpdateServerList(myself, pack);
 
         }
 
@@ -94,9 +95,8 @@ namespace Server {
                                                             //Ter acesso directo a esta estrutura permite rapida
                                                             //verificacao se eh preciso ou nao redistribuir certo padint
         // Lista mantida pelo coordenador
-        // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit,
-        // basta guardar os endereços dos servidores que têm objectos desta tx para os contactar
-        private SortedDictionary<int, List<string>> txServersList = new SortedDictionary<int, List<string>>();
+        // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit
+        private SortedDictionary<int, List<int>> txObjCoordList = new SortedDictionary<int, List<int>>();
 
         // Lista mantida pelos responsaveis por objectos envolvidos em txs
         // <txId, lista< uid > >
@@ -125,16 +125,27 @@ namespace Server {
         private ReaderWriterLockSlim padintsLock = new ReaderWriterLockSlim();
         private Dictionary<int, Object> padintLocks = new Dictionary<int, Object>(); //this will be protected by txLock
 
+        private Boolean waitingForObjects = true;
+        //Enquanto este waiting tiver a false, lanca phantomException nos metodos que sao chamados entre
+        //servidores: Create, access, canCoomit, Commit, Abort
+
+        //Listas com valores para enviar
+        Dictionary<int, int> objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+        Dictionary<int, int> objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+        List<PadIntInsider> padintToSendList = new List<PadIntInsider>();
+
         public string GetAddress() { return myself; }
 
 
         //ServerNode updates this object after successful registration with master
-        public void UpdateServerList(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
+        public void UpdateServerList(string serverAddrPort, MasterPackage masterPack)
         {
             List<ServerInfo> serversInfo;
+            string serverWhoHasMyObjects = masterPack.getServerWhoTransfers();
+            Console.WriteLine("Server who has my objects: " + serverWhoHasMyObjects);
             lock (serverLock)
             {
-                this.servers = servers;
+                this.servers = masterPack.getServers();
                 this.myself = serverAddrPort;
                 serversInfo = servers.Values.ToList();
             }
@@ -148,7 +159,7 @@ namespace Server {
                     {
                         IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                             "tcp://" + server + "/Server");
-                        serv.UpdateNetwork(serverAddrPort);
+                        serv.UpdateNetwork(myself);
                     }
                     catch (Exception e) { Console.WriteLine(e); }
                 }
@@ -160,12 +171,74 @@ namespace Server {
                     }                       //redistribuicao dos objectos ser feita mais rapidamente
                 }
             }
+            //Depois de notificar todos, vou contactar o servidor que podera ter objectos para mim, se esse
+            //servidor existir
+            if (serverWhoHasMyObjects != null)
+            {
+                ServerPackage serverPack = new ServerPackage(null, null, null);
+                try
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + serverWhoHasMyObjects + "/Server");
+                    serverPack = serv.GiveObjectsTo(myself);
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+                List<PadIntInsider> receivedList = serverPack.getPadintToSendList();
+                Dictionary<int, int> receivedObjTxDict = serverPack.getObjTxToSendDict();
+                Dictionary<int, int> receivedObjCreatedTxDict = serverPack.getObjCreatedTxToSendDict();
+                lock (txLock)
+                {
+                    if (receivedList != null && receivedList.Count != 0)
+                    {
+                        foreach (PadIntInsider padint in receivedList)
+                        {
+                            myPadInts.Add(padint.UID, padint);
+                            //Create a lock for each padint received
+                            padintsLock.EnterWriteLock();
+                            try
+                            {
+                                padintLocks[padint.UID] = new Object();
+                            }
+                            finally
+                            {
+                                padintsLock.ExitWriteLock();
+                            }
+                            
+                        }
+                    }
+                    if (receivedObjTxDict != null && receivedObjTxDict.Count != 0)
+                    {
+                        foreach (KeyValuePair<int, int> kvp in receivedObjTxDict)
+                        {
+                            int txId = kvp.Value;
+                            int uid = kvp.Key;
+                            if (!txObjList.ContainsKey(txId))
+                                txObjList.Add(txId, new List<int>());
+                            txObjList[txId].Add(uid);
+                        }
+                    }
+                    if (receivedObjCreatedTxDict != null && receivedObjCreatedTxDict.Count != 0)
+                    {
+                        foreach (KeyValuePair<int, int> kvp in receivedObjCreatedTxDict)
+                        {
+                            int txId = kvp.Value;
+                            int uid = kvp.Key;
+                            if (!txCreatedObjList.ContainsKey(txId))
+                                txCreatedObjList.Add(txId, new List<int>());
+                            txCreatedObjList[txId].Add(uid);
+                        }
+                    }
+                }
+            }
+            waitingForObjects = false; //ja nao estou ah espera quando recebo objectos.
         }
 
         //Server-Server
         //Other servers call this to change topology after node join or leave
         public void UpdateNetwork(string serverAddrPort)
         {
+            threadSafeStateCheck();
+
             Boolean doesNotContainServer;
             lock (serverLock)
             {
@@ -178,7 +251,7 @@ namespace Server {
                 lock (serverLock)
                 {
                     //Insere o novo servidor na lista de servers, e retorna o meu novo (ou nao) ServerInfo
-                    newMySInfo = DstmUtil.InsertServer(serverAddrPort, servers, myself);
+                    newMySInfo = DstmUtil.InsertServer(serverAddrPort, servers, myself).getServerInfo();
                 }
                 lock(txLock){
                     oldIntervalEnd = mySInfo.getEnd();
@@ -187,9 +260,6 @@ namespace Server {
                 //do intervalo original, por isso basta ver se o limite superior do meu intervalo mudou)
                 if (oldIntervalEnd != newMySInfo.getEnd())
                 {
-                    Dictionary<int, int> objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
-                    Dictionary<int, int> objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
-                    List<PadIntInsider> padintToSendList = new List<PadIntInsider>();
                     List<PadIntInsider> padints;
                     lock(txLock){
                         //Se sim, tenho de actualizar o mySInfo
@@ -222,66 +292,6 @@ namespace Server {
                                     objCreatedTxToSendDict[padint.UID] = kvp.Key;
                             }
                         }
-                        
-                    }
-                    //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
-                    //TODO: so posso enviar quando tiver a certeza que nao estao envolvidos em
-                    //nenhuma das minhas tx (ou de qualquer um...)... sera que isto eh problema?
-                    if (padintToSendList.Count != 0)
-                    {
-                        lock (txLock)
-                        {
-                            //removo da minha lista de padints
-                            foreach (PadIntInsider padint in padintToSendList)
-                            {
-                                myPadInts.Remove(padint.UID);
-                            }
-                        }
-                        //Actualizar: txServerList, txObjList, txCreatedObjList
-                        //removo da minha lista de tx-obj, pq ja n sou responsavel pelo objecto
-                        foreach (KeyValuePair<int, int> kvp in objTxToSendDict)
-                        {
-                            int txId = kvp.Value;
-                            int uid = kvp.Key;
-                            lock (txLock)
-                            {
-                                txObjList[txId].Remove(uid);
-                                if (txObjList[txId].Count == 0)  //se a lista ficou vazia, elimina a entrada
-                                {
-                                    txObjList.Remove(txId);
-                                    //Se eu nao tenho objectos meus nesta tx, retiro-me da lista tx-server, se a entrada existir,
-                                    //ou seja, se eu for o coordenador da tx que tinha objectos meus que foram redistribuidos
-                                    if (txServersList.ContainsKey(txId))
-                                        txServersList[txId].Remove(myself);
-                                }
-                                //Se eu coordenar esta tx, actualizo a minha tx-server list, para dizer q o novo servidor 
-                                //participa em txs que eu coordeno
-                                if (txServersList.ContainsKey(txId) && !txServersList[txId].Contains(serverAddrPort))
-                                    txServersList[txId].Add(serverAddrPort);
-                            }
-                        }
-                        //removo da minha lista de tx-objCreated, pq ja n sou responsavel pelo objecto
-                        foreach (KeyValuePair<int, int> kvp in objCreatedTxToSendDict)
-                        {
-                            int txId = kvp.Value;
-                            int uid = kvp.Key;
-                            lock (txLock)
-                            {
-                                txCreatedObjList[txId].Remove(uid);
-                                if (txCreatedObjList[txId].Count == 0) //se a lista ficou vazia, elimina a entrada
-                                {
-                                    Thread.Sleep(1000);
-                                    txCreatedObjList.Remove(txId);
-                                }
-                            }
-                        }
-                        try
-                        {
-                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                                "tcp://" + serverAddrPort + "/Server");
-                            serv.UpdateObjects(padintToSendList, objTxToSendDict, objCreatedTxToSendDict);
-                        }
-                        catch (Exception e) { Console.WriteLine(e); }
                     }
                 }
                 //Se nao fui afectado pela entrada do novo servidor, nao tenho de fazer mais nada              
@@ -289,35 +299,83 @@ namespace Server {
         }
 
         //Server-Server
-        //Quando este servidor entra, eh possivel que algum outro tenho objectos que agora pertencem a este
-        //portanto ao ser invocado este metodo, este servidor vai fazer update eh sua lista de objectos mantidos
-        public void UpdateObjects(List<PadIntInsider> toSendList, Dictionary<int, int> objTxToSendDict, Dictionary<int, int> objCreatedTxToSendDict)
+        //O servidor que entrou chama este metodo no servidor que podera ter objectos seus
+        public ServerPackage GiveObjectsTo(string serverAddrPort)
         {
-            lock (txLock)
+            //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
+            //TODO: so posso enviar quando tiver a certeza que nao estao envolvidos em
+            //nenhuma das minhas tx (ou de qualquer um...)... sera que isto eh problema?
+            if (padintToSendList.Count != 0)
             {
-                foreach (PadIntInsider padint in toSendList)
+                lock (txLock)
                 {
-                    myPadInts.Add(padint.UID, padint);
+                    //removo da minha lista de padints
+                    foreach (PadIntInsider padint in padintToSendList)
+                    {
+                        myPadInts.Remove(padint.UID);
+                    }
                 }
+                //Remove locks of the objects I will no longer hold
+                foreach (PadIntInsider padint in padintToSendList)
+                {
+                    padintsLock.EnterWriteLock();
+                    try
+                    {
+                        padintLocks.Remove(padint.UID);
+                    }
+                    finally
+                    {
+                        padintsLock.ExitWriteLock();
+                    }
+                }
+                //Actualizar: txServerList, txObjList, txCreatedObjList
+                //removo da minha lista de tx-obj, pq ja n sou responsavel pelo objecto
                 foreach (KeyValuePair<int, int> kvp in objTxToSendDict)
                 {
                     int txId = kvp.Value;
                     int uid = kvp.Key;
-                    if (!txObjList.ContainsKey(txId))
-                        txObjList.Add(txId, new List<int>());
-                    txObjList[txId].Add(uid);
+                    lock (txLock)
+                    {
+                        txObjList[txId].Remove(uid);
+                        if (txObjList[txId].Count == 0)  //se a lista ficou vazia, elimina a entrada
+                            txObjList.Remove(txId);
+                    }
                 }
+                //removo da minha lista de tx-objCreated, pq ja n sou responsavel pelo objecto
                 foreach (KeyValuePair<int, int> kvp in objCreatedTxToSendDict)
                 {
                     int txId = kvp.Value;
                     int uid = kvp.Key;
-                    if (!txCreatedObjList.ContainsKey(txId))
-                        txCreatedObjList.Add(txId, new List<int>());
-                    txCreatedObjList[txId].Add(uid);
+                    lock (txLock)
+                    {
+                        txCreatedObjList[txId].Remove(uid);
+                        if (txCreatedObjList[txId].Count == 0) //se a lista ficou vazia, elimina a entrada
+                        {
+                            Thread.Sleep(1000);
+                            txCreatedObjList.Remove(txId);
+                        }
+                    }
                 }
+                ServerPackage pack = new ServerPackage(padintToSendList, objTxToSendDict, objCreatedTxToSendDict);
+                //Reset the send lists
+                objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                padintToSendList = new List<PadIntInsider>();
+                return pack;
             }
-        }
-        
+            else
+            {
+                //Se o meu intervalo foi afetado, mas nao tenho objectos para enviar, envio a mensagem
+                //que diz que nao tinha obejctos para enviar, para q o novo saiba que ja pode aceitar 
+                //novos pedidos
+
+                //clear ahs listas temporarias
+                objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
+                padintToSendList = new List<PadIntInsider>();
+                return new ServerPackage(null, null, null);
+            }
+        }     
 
         //Client-Server
         public bool TxBegin(string clientAddressPort)
@@ -341,10 +399,6 @@ namespace Server {
                 int txId = master.getTxId();
                 lock(serverLock){
                     clients.Add(clientAddressPort, txId);//update tx ID for this client
-                }
-                lock (txLock)
-                {
-                    txServersList.Add(txId, new List<string>());
                 }
                 //DstmUtil.ShowClientsList(clients);
                 return true;
@@ -392,9 +446,10 @@ namespace Server {
             //Portanto, o coordenador fica com esta ref remota (uid), e envia um proxy ao cliente.
 
             lock(txLock){
-                //Actualiza a lista de servidores com objectos usados nesta tx: Add( txId, coordAddrPort)
-                if (!txServersList[txId].Contains(responsible))
-                    txServersList[txId].Add(responsible);
+                //Actualiza a lista de objectos usados nesta tx
+                if (!txObjCoordList.ContainsKey(txId))
+                    txObjCoordList.Add(txId, new List<int>());
+                txObjCoordList[txId].Add(uid);
             }
             //DstmUtil.ShowTxServersList(txServersList);
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
@@ -444,9 +499,10 @@ namespace Server {
 
             lock (txLock)
             {
-                //Actualiza a lista de servidores com objectos usados nesta tx: Add( txId, coordAddrPort)
-                if (!txServersList[txId].Contains(responsible))
-                    txServersList[txId].Add(responsible);
+                //Actualiza a lista de objectos usados nesta tx
+                if (!txObjCoordList.ContainsKey(txId))
+                    txObjCoordList.Add(txId, new List<int>());
+                txObjCoordList[txId].Add(uid);
             }
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
@@ -491,7 +547,6 @@ namespace Server {
                 value = Read(uid, txId);
             }
             return value;
-            
         }
 
         //Client-Server
@@ -547,14 +602,14 @@ namespace Server {
             lock (txLock)
             {
                 //obtem os servidores que guardam objectos que participaram na tx
-                serverList = txServersList[txId];
+                serverList = DstmUtil.GetInvolvedServersList(servers, txObjCoordList[txId]);
             }
             numWaitingResponse = serverList.Count;
             bool canCommit = false;
             bool result;
             //Envio dos canCommits
             foreach (string server in serverList)
-            { //TODO: paralelizar o envio destes pedidos
+            {
                 if (!server.Equals(myself))
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
@@ -562,7 +617,6 @@ namespace Server {
                     canCommit = serv.CanCommit(txId);
                     if (canCommit)
                         numWaitingResponse--;
-
                 }
                 else
                 {
@@ -603,8 +657,8 @@ namespace Server {
             }
             lock (txLock)
             {
-                //Remover a tx da lista de tx-servidores:
-                txServersList.Remove(txId);
+                //Remover a tx da lista de txObj do coordenador
+                txObjCoordList.Remove(txId);
             }
             lock (serverLock)
             {
@@ -629,8 +683,7 @@ namespace Server {
             }
             List<string> serverList;
             lock(txLock){
-                //obtem os servidores que guardam objectos que participaram na tx
-                serverList = txServersList[txId];
+                serverList = DstmUtil.GetInvolvedServersList(servers, txObjCoordList[txId]);
             }
             int numWaitingResponse = serverList.Count;
 
@@ -649,8 +702,8 @@ namespace Server {
                 }
             }
             lock(txLock){
-                //Remover a tx da lista de tx-servidores:
-                txServersList.Remove(txId);
+                //Remover a tx da lista de txObj do coordenador
+                txObjCoordList.Remove(txId);
             }
             lock(serverLock){
                 //Remover a tx da lista dos clientes-tx
@@ -666,6 +719,20 @@ namespace Server {
         //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
         public void CreatePadInt(int uid, int txId)
         {
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while(isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if(isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
             lock (txLock)
             {
                 //Verifica se o padint ja existe
@@ -686,7 +753,8 @@ namespace Server {
             {
                 padintsLock.ExitWriteLock();
             }
-            lock(txLock){
+            lock (txLock)
+            {
                 //Actualiza a sua lista de objectos que participam nesta tx
                 if (!txObjList.ContainsKey(txId))
                     txObjList.Add(txId, new List<int>());
@@ -697,6 +765,7 @@ namespace Server {
                     txCreatedObjList.Add(txId, new List<int>());
                 txCreatedObjList[txId].Add(uid);
             }
+            
         }
 
         //Server-Server
@@ -706,6 +775,20 @@ namespace Server {
         //atraves de uma chamada remota pelo protocolo...
         public void AccessPadInt(int uid, int txId)
         {
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
             lock (txLock)
             {
                 //Verifica se o padint ja existe
@@ -724,6 +807,20 @@ namespace Server {
         //Server-Server
         public int Read(int uid, int txId) {
 
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
             bool hasPadInt;
             //search for the padint
             PadIntInsider padint;
@@ -755,12 +852,29 @@ namespace Server {
                 }
                 return result;
             }
-            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
+            else
+                throw new TxException("PadInt not present in the responsible server!");
             
         }
 
         //Server-Server
         public void Write(int uid, int txId, int value) {
+
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
+
             PadIntInsider padint;
             bool hasPadInt;
             Object padintLock;
@@ -785,14 +899,29 @@ namespace Server {
                     padint.Write(txId, value);
                 }
             }
-            else throw new TxException("PadInt not present in the responsible server! (Redistribution was late)");
-            
+            else
+                throw new TxException("PadInt not present in the responsible server!");
         }
 
         //Server-Server
         //DUVIDA: em que situacao o canCommit retorna false?
         public bool CanCommit(int txId)
         {
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
+
             bool result;
             List<int> uids;
             lock (txLock)
@@ -826,12 +955,26 @@ namespace Server {
                     return false;
             }
             return true;
-            
         }
 
         //Server-Server
         public void Commit(int txId)
         {
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
+
             int result;
             List<int> uids;
             lock (txLock)
@@ -883,6 +1026,20 @@ namespace Server {
         //Server-Server
         public void Abort(int txId)
         {
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
             List<int> uids;
             lock (txLock)
             {
@@ -912,8 +1069,9 @@ namespace Server {
                     padint.Abort(txId);
                 }
             }
-            
-            lock(txLock){
+
+            lock (txLock)
+            {
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txObjList.Remove(txId);
                 //Para cada objecto que criou (se criou algum!) no contexto desta tx, remove-o
@@ -954,7 +1112,7 @@ namespace Server {
                 {
                     mySInfo = new ServerInfo(0, 0, "");
                     myPadInts = new SortedDictionary<int, PadIntInsider>();
-                    txServersList = new SortedDictionary<int, List<string>>();
+                    txObjCoordList = new SortedDictionary<int, List<int>>();
                     txObjList = new SortedDictionary<int, List<int>>();
                     txCreatedObjList = new SortedDictionary<int, List<int>>();
                 }
@@ -1067,7 +1225,7 @@ namespace Server {
             }
             lock (txLock)
             {
-                DstmUtil.ShowTxServersList(txServersList);
+                DstmUtil.ShowTxServersList(txObjCoordList, servers);
                 DstmUtil.ShowServerIntervals(mySInfo);
                 DstmUtil.ShowPadIntsList(myPadInts);
                 DstmUtil.ShowTxObjectsList(txObjList);

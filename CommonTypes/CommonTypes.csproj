@@ -98,10 +98,13 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DstmUtil.cs" />
+    <Compile Include="MasterPackage.cs" />
     <Compile Include="Murmur3.cs" />
     <Compile Include="PadInt.cs" />
     <Compile Include="PadIntInsider.cs" />
     <Compile Include="ServerInfo.cs" />
+    <Compile Include="ServerPackage.cs" />
+    <Compile Include="SInfoPackage.cs" />
     <Compile Include="TxException.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />

@@ -40,17 +40,16 @@ namespace Master {
         private Object BootstrapClientLock = new Object();
         private Object StatusLock = new Object();
 
-        public SortedDictionary<int, ServerInfo> RegisterServer(string serverAddrPort)
+        public MasterPackage RegisterServer(string serverAddrPort)
         {
             lock (registerServerLock)
             {
                 if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
                 {
                     roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
-                    DstmUtil.InsertServer(serverAddrPort, servers, null);
+                    SInfoPackage pack = DstmUtil.InsertServer(serverAddrPort, servers, null);
                     Console.WriteLine("Registered: " + serverAddrPort);
-
-                    return servers;
+                    return new MasterPackage(servers, pack.getServerWhoTransfers());
                 }
             }
             return null;

@@ -36,7 +36,7 @@ namespace PADI_DSTM
         bool CanCommit(int txId);
         void Commit(int txId);
         void Abort(int txId);
-        void UpdateObjects(List<PadIntInsider> padintToSendList, Dictionary<int, int> objTxToSendDict, Dictionary<int, int> objCreatedTxToSendDict);
+        ServerPackage GiveObjectsTo(string server);
     }
 
     public interface IServerMaster
@@ -46,7 +46,7 @@ namespace PADI_DSTM
 
     public interface IMasterServer
     {
-        SortedDictionary<int, ServerInfo> RegisterServer(string port);
+        MasterPackage RegisterServer(string port);
         int getTxId();
     }
 

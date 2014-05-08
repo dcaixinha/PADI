@@ -84,6 +84,8 @@ namespace TestsPadint
                     Console.WriteLine("TEST PASSED!\r\n");
                 else Console.WriteLine("FAILED!\r\n");
 
+                PadiDstm.TxCommit();
+
                 PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
@@ -233,7 +235,7 @@ namespace TestsPadint
                 Console.WriteLine("Reading value (should be " + value + ")...");
 
                 // e preciso lancar uma instacia de cliente para fazer recover, pois este txbegin vai bloquear uma vez que o server esta freezed...
-                Console.WriteLine("Calling Read, now launch a client debug instance and write the command:  recover ");
+                Console.WriteLine("Calling Read, now launch a client debug instance and write the command: recover 4001 ");
 
                 
                 int obtained = padint.Read();

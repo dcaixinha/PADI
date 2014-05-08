@@ -29,7 +29,7 @@ namespace PADI_DSTM
         //Insere 1 servidor no dicionario ordenado
         //<int beginInterval, objct<int beginIntv, int endInterv, string portAddr>>
         //Retorna o ServerInfo do servidor que chamou este metodo (requester)
-        public static ServerInfo InsertServer(string newServerAddrPort, SortedDictionary<int, ServerInfo> servers, string requester)
+        public static SInfoPackage InsertServer(string newServerAddrPort, SortedDictionary<int, ServerInfo> servers, string requester)
         {
             int intervalSize = 0; //the size of the interval to be splitted
             string serverToSplit = "";
@@ -67,7 +67,9 @@ namespace PADI_DSTM
                     requesterSInfo = i1;
             }
             //ShowServerList(servers);
-            return requesterSInfo;
+            if (serverToSplit.Equals(""))
+                serverToSplit = null;
+            return new SInfoPackage(requesterSInfo, serverToSplit);
         }
 
         //Used by: Servers, Master
@@ -108,6 +110,19 @@ namespace PADI_DSTM
                                 GetBytes((ulong)num)), 0));
         }
 
+        //Used by coordinator servers, which have a map of tx-objects (coordinator) to find which servers to contact
+        //for commit, abort
+        public static List<string> GetInvolvedServersList(SortedDictionary<int, ServerInfo> servers, List<int> objectIds)
+        {
+            List<string> serverList = new List<string>();
+            foreach(int uid in objectIds){
+                string serverAddrPort = GetResponsibleServer(servers, uid);
+                if (!serverList.Contains(serverAddrPort))
+                    serverList.Add(serverAddrPort);
+            }
+            return serverList;
+        }
+
 
         //METODOS PARA O STATUS
         public static void ShowServerList(SortedDictionary<int, ServerInfo> servers)
@@ -140,16 +155,18 @@ namespace PADI_DSTM
                 Console.WriteLine("Empty!");
         }
 
-        public static void ShowTxServersList(SortedDictionary<int, List<string>> txServersList)
+        //Shows which servers are involved in which txs at this coordinator
+        public static void ShowTxServersList(SortedDictionary<int, List<int>> txObjCoordList, SortedDictionary<int, ServerInfo> servers)
         {
             Console.WriteLine("=== Tx-Servers List (Coordinator) ===");
-            if (txServersList.Count > 0)
+            if (txObjCoordList.Count > 0)
             {
                 Console.WriteLine("txId : server_1 server_2 ...");
-                foreach (KeyValuePair<int, List<string>> kvp in txServersList)
+                foreach (KeyValuePair<int, List<int>> kvp in txObjCoordList)
                 {
-                    Console.Write(kvp.Key+" : ");
-                    foreach(string addrPort in kvp.Value)
+                    List<string> involvedServers = GetInvolvedServersList(servers, kvp.Value);
+                    Console.Write(kvp.Key + " : ");
+                    foreach (string addrPort in involvedServers)
                         Console.Write(" " + addrPort);
                     Console.Write("\r\n");
                 }
@@ -157,6 +174,7 @@ namespace PADI_DSTM
             else
                 Console.WriteLine("Empty!");
         }
+
 
         public static void ShowQueue(Queue<string> queue)
         {
