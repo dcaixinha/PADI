@@ -71,6 +71,7 @@ namespace PADI_DSTM
             foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
             {
                 if (serverEntry.Key == beginInterval) //se eu me encontrei
+                { 
                     if (previousEntry != null)
                         return previousEntry.getPortAddress();
                     else //se nao havia previous, eh pq sou o primeiro, logo o meu previous eh o ultimo
@@ -78,8 +79,10 @@ namespace PADI_DSTM
                         if (numServers > 1)
                         {
                             return servers[lastElementIndex].getPortAddress();
-                        }else return null;
+                        }
+                        else return null;
                     }
+                }
                 previousEntry = serverEntry.Value;
             }
             return null; //nunca deve acontecer, eu devo estar presente nesta lista... sempre...
@@ -129,12 +132,12 @@ namespace PADI_DSTM
                 }
                 else
                 {
-                    i1 = new ServerInfo(0, entry.getEnd(), serverToSplit);
-                    i2 = new ServerInfo(entry.getBegin(), Int32.MaxValue, newServerAddrPort);
+                    i1 = new ServerInfo(entry.getBegin(), Int32.MaxValue, serverToSplit);
+                    i2 = new ServerInfo(0, entry.getEnd(), newServerAddrPort);
                 }
 
-                servers.Add(i1.getBegin(), i1); //antigo com o intervalo mais curto
-                servers.Add(i2.getBegin(), i2); //new server
+                servers.Add(i1.getBegin(), i1); 
+                servers.Add(i2.getBegin(), i2);
                 //Verifica se o requester foi afectado, actualiza o sInfo a ser retornado
                 if (requester != null && serverToSplit.Equals(requester))
                     requesterSInfo = i1;

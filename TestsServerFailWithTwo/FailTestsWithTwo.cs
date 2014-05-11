@@ -24,10 +24,10 @@ namespace TestsServerFailWithTwo
             Console.WriteLine("TxBegin...");
             PadiDstm.TxBegin();
 
-            int uid1 = 1000000000;
-            int value1 = 41;
-            int uid2 = 1;
+            int uid2 = 1000000000;
             int value2 = 42;
+            int uid1 = 1;
+            int value1 = 41;
 
             int faillingServerPort = 2002;
 
@@ -35,11 +35,11 @@ namespace TestsServerFailWithTwo
 
             try
             {
-                Console.WriteLine("CreatePadint " + uid1 + "...");
-                padint = PadiDstm.CreatePadInt(uid1);
+                Console.WriteLine("CreatePadint " + uid2 + "...");
+                padint = PadiDstm.CreatePadInt(uid2);
 
-                Console.WriteLine("Writing value " + value1 + "...");
-                padint.Write(value1);
+                Console.WriteLine("Writing value " + value2 + "...");
+                padint.Write(value2);
 
                 Console.WriteLine("Committing...");
                 PadiDstm.TxCommit();
@@ -47,11 +47,11 @@ namespace TestsServerFailWithTwo
                 Console.WriteLine("TxBegin...");
                 PadiDstm.TxBegin();
 
-                Console.WriteLine("CreatePadint " + uid2 + "...");
-                padint = PadiDstm.CreatePadInt(uid2);
+                Console.WriteLine("CreatePadint " + uid1 + "...");
+                padint = PadiDstm.CreatePadInt(uid1);
 
-                Console.WriteLine("Writing value " + value2 + "...");
-                padint.Write(value2);
+                Console.WriteLine("Writing value " + value1 + "...");
+                padint.Write(value1);
 
                 Console.WriteLine("Status, press any key to continue the test...");
                 PadiDstm.Status();
@@ -65,7 +65,7 @@ namespace TestsServerFailWithTwo
                     return;
                 }
 
-                Console.WriteLine("Status, server 1 failed but server 2 hasnt noticed yet");
+                Console.WriteLine("Status, server 2 failed but server 1 hasnt noticed yet");
                 Console.WriteLine("Press any key to continue the test...");
                 PadiDstm.Status();
                 Console.ReadLine();
@@ -80,10 +80,10 @@ namespace TestsServerFailWithTwo
                 Console.WriteLine("TxBegin...");
                 PadiDstm.TxBegin();
 
-                Console.WriteLine("AccessPadint " + uid1 + " (from the failed server)...");
-                padint = PadiDstm.AccessPadInt(uid1);
+                Console.WriteLine("AccessPadint " + uid2 + " (will contact the failed server)...");
+                padint = PadiDstm.AccessPadInt(uid2);
 
-                Console.WriteLine("Reading value (should be " + value1 + ")...");
+                Console.WriteLine("Reading value (should be " + value2 + ")...");
                 int obtained = padint.Read();
                 Console.WriteLine("Obtained: " + obtained);
             }

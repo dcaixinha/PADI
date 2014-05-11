@@ -285,9 +285,10 @@ namespace Server {
                     //obter o meu intervalo novo e ver se eu tenho objectos fora desse intervalo
                     foreach (PadIntInsider padint in padints)
                     {
+                        int beginning = newMySInfo.getBegin();
                         int ending = newMySInfo.getEnd();
                         int hashedUid = DstmUtil.HashMe(padint.UID);
-                        if (ending < hashedUid) //ja esta fora do intervalo
+                        if (hashedUid > ending || hashedUid < beginning ) //esta fora do intervalo
                         {
                             padintToSendList.Add(padint);
                             List<KeyValuePair<int, List<int>>> txObject;
@@ -324,6 +325,7 @@ namespace Server {
             //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
             if (padintToSendList.Count != 0)
             {
+                Console.WriteLine("Transfering " + padintToSendList.Count + " objects to the new server...");
                 lock (txLock)
                 {
                     //removo da minha lista de padints
@@ -396,6 +398,7 @@ namespace Server {
                 //Se o meu intervalo foi afetado, mas nao tenho objectos para enviar, envio a mensagem
                 //que diz que nao tinha obejctos para enviar, para q o novo saiba que ja pode aceitar 
                 //novos pedidos
+                Console.WriteLine("No objects to transfer to the new server...");
 
                 //clear ahs listas temporarias
                 objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
@@ -1435,6 +1438,7 @@ namespace Server {
                 {
                     mySInfo = new ServerInfo(0, 0, "");
                     myPadInts = new SortedDictionary<int, PadIntInsider>();
+                    replicatedPadInts = new SortedDictionary<int, PadIntInsider>();
                     txObjCoordList = new SortedDictionary<int, List<int>>();
                     txObjList = new SortedDictionary<int, List<int>>();
                     txCreatedObjList = new SortedDictionary<int, List<int>>();
