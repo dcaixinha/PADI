@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerEntryWithOne", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerEntryWithTwoFreeze", "TestsServerEntryWithTwoFreeze\TestsServerEntryWithTwoFreeze.csproj", "{C9F90707-A57B-42C8-B9ED-5A9086A0345C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailWithTwo", "TestsServerFailWithTwo\TestsServerFailWithTwo.csproj", "{6C7317C1-A493-4B65-A286-2E9758B6C231}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -74,6 +76,10 @@ Global
 		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C9F90707-A57B-42C8-B9ED-5A9086A0345C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6C7317C1-A493-4B65-A286-2E9758B6C231}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C7317C1-A493-4B65-A286-2E9758B6C231}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C7317C1-A493-4B65-A286-2E9758B6C231}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C7317C1-A493-4B65-A286-2E9758B6C231}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

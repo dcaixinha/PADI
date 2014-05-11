@@ -31,27 +31,38 @@ namespace Master {
 
         private Queue<string> roundRobin = new Queue<string>();
         private int txIdCounter = 0;
+        private List<string> crashedServers = new List<string>();
 
         private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >
 
         //Locks
-        private Object registerServerLock = new Object();
+        private Object serversLock = new Object();
         private Object txIdLock = new Object();
-        private Object BootstrapClientLock = new Object();
+        private Object roundRobinLock = new Object();
         private Object StatusLock = new Object();
 
         public MasterPackage RegisterServer(string serverAddrPort)
         {
-            lock (registerServerLock)
+            Boolean hasServerInfo;
+            lock (serversLock)
             {
-                if (!DstmUtil.ServerInfoContains(servers, serverAddrPort))
+                hasServerInfo = DstmUtil.ServerInfoContains(servers, serverAddrPort);
+            }
+            if (!hasServerInfo)
+            {
+                SInfoPackage pack;
+                lock (roundRobinLock)
                 {
                     roundRobin.Enqueue(serverAddrPort); //Acrescenta ah round robin de servidores
-                    SInfoPackage pack = DstmUtil.InsertServer(serverAddrPort, servers, null);
-                    Console.WriteLine("Registered: " + serverAddrPort);
-                    return new MasterPackage(servers, pack.getServerWhoTransfers());
                 }
+                lock (serversLock)
+                {
+                    pack = DstmUtil.InsertServer(serverAddrPort, servers, null);
+                }
+                Console.WriteLine("Registered: " + serverAddrPort);
+                return new MasterPackage(servers, pack.getServerWhoTransfers());
             }
+            
             return null;
         }
 
@@ -63,10 +74,51 @@ namespace Master {
             }
         }
 
+        //Returns true if this is the first time this server crash was detected
+        public Boolean DetectedCrash(string crashedServerAddrPort)
+        {
+            Boolean alreadyDetectedCrash;
+            lock (serversLock)
+            {
+                alreadyDetectedCrash = crashedServers.Contains(crashedServerAddrPort);
+            }
+            if (alreadyDetectedCrash)
+                return false;
+            else //Eh preciso remover este servidor
+            {
+                Boolean hasServerInfo = false;
+                lock (serversLock)
+                {
+                    crashedServers.Add(crashedServerAddrPort);
+                    hasServerInfo = DstmUtil.ServerInfoContains(servers, crashedServerAddrPort);
+                }
+                if (hasServerInfo)
+                {
+                    //Remove o elemento da roundRobin
+                    lock (roundRobinLock)
+                    {
+                        while (true)
+                        {
+                            string poppedServer = roundRobin.Dequeue();
+                            if (poppedServer.Equals(crashedServerAddrPort))
+                                break;
+                            roundRobin.Enqueue(poppedServer);
+                        }
+                    }
+                    lock (serversLock)
+                    {
+                        DstmUtil.RemoveServer(crashedServerAddrPort, servers, null);
+                    }
+                    Console.WriteLine("Unregistered: " + crashedServerAddrPort);
+                }
+                return true;
+            }
+        }
+
         //Client calls this to bootstrap himself and get a server
         public string BootstrapClient(string addrPort)
         {
-            lock (BootstrapClientLock)
+            lock (roundRobinLock)
             {
                 string serverAddrPort = roundRobin.Dequeue();
                 roundRobin.Enqueue(serverAddrPort);
@@ -80,19 +132,24 @@ namespace Master {
             lock (StatusLock)
             {
                 printSelfStatus();
-                //Contacta todos os servidores para lhes pedir para mostrar o status
-                foreach (ServerInfo sInfo in servers.Values)
-                {
-                    string server = sInfo.getPortAddress();
-                    try
-                    {
-                        IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
-                            "tcp://" + server + "/Server");
-                        serv.printSelfStatus();
-                    }
-                    catch (Exception e) { Console.WriteLine(e); }
-                }
             }
+            ServerInfo[] serverInfoArray = new ServerInfo[servers.Keys.Count];
+            lock(serversLock){
+                servers.Values.CopyTo(serverInfoArray, 0);
+            }
+            //Contacta todos os servidores para lhes pedir para mostrar o status
+            foreach (ServerInfo sInfo in serverInfoArray)
+            {
+                string server = sInfo.getPortAddress();
+                try
+                {
+                    IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
+                        "tcp://" + server + "/Server");
+                    serv.printSelfStatus();
+                }
+                catch (Exception e) { Console.WriteLine(e); }
+            }
+            
         }
 
         private void printSelfStatus(){

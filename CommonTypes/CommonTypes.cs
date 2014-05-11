@@ -36,7 +36,11 @@ namespace PADI_DSTM
         bool CanCommit(int txId);
         void Commit(int txId);
         void Abort(int txId);
-        ServerPackage GiveObjectsTo(string server);
+        ServerPackage GiveMeMyObjects();
+        void SetReplicas(List<PadIntInsider> replicas);
+        void UpdateReplicas(List<PadIntInsider> replicasToSend);
+        void UpdateNetworkAfterCrash(string crashedServerAddrPort);
+        List<PadIntInsider> GiveMeYourReplicas();
     }
 
     public interface IServerMaster
@@ -48,6 +52,7 @@ namespace PADI_DSTM
     {
         MasterPackage RegisterServer(string port);
         int getTxId();
+        Boolean DetectedCrash(string crashedServerAddrPort); 
     }
 
     public interface IMasterClient

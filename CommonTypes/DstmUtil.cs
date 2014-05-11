@@ -25,6 +25,66 @@ namespace PADI_DSTM
             return localIP;
         }
 
+        //Returns a replica of the current padint (committed values only)
+        public static PadIntInsider GetPadintReplicaFrom(PadIntInsider padint)
+        {
+            int uid = padint.UID;
+            PadIntInsider replica = new PadIntInsider(uid);
+            replica.COMMITREAD = padint.COMMITREAD;
+            replica.COMMITWRITE = padint.COMMITWRITE;
+            return replica;
+        }
+
+        //Returns null if no elements, or if theres only one element
+        //beginInterval eh o de quem procura
+        public static string GetNextServer(int beginInterval, SortedDictionary<int, ServerInfo> servers)
+        {
+            Boolean passingFirstServer = true;
+            ServerInfo firstServer = null;
+            Boolean foundMyself = false;
+            foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
+            {
+                if (passingFirstServer)
+                {
+                    passingFirstServer = false;
+                    firstServer = serverEntry.Value;
+                }
+                if (foundMyself) //se no ciclo anterior eu me encontrei, este eh o meu next
+                    return serverEntry.Value.getPortAddress();
+                //procuro-me a mim
+                if (serverEntry.Key == beginInterval)
+                    foundMyself = true; 
+            }
+            //Se chegou ao fim sem retornar eh pq o proximo eh o primeiro elemento ou se nao ha elementos...
+            if (firstServer != null && firstServer.getBegin() != beginInterval )
+                return firstServer.getPortAddress();
+            else return null;
+        }
+
+        //Returns null if no elements, or if theres only one element
+        //beginInterval eh o de quem procura
+        public static string GetPreviousServer(int beginInterval, SortedDictionary<int, ServerInfo> servers)
+        {
+            ServerInfo previousEntry = null;
+            int numServers = servers.Keys.Count;
+            int lastElementIndex = new List<int>(servers.Keys)[numServers - 1];
+            foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
+            {
+                if (serverEntry.Key == beginInterval) //se eu me encontrei
+                    if (previousEntry != null)
+                        return previousEntry.getPortAddress();
+                    else //se nao havia previous, eh pq sou o primeiro, logo o meu previous eh o ultimo
+                    {
+                        if (numServers > 1)
+                        {
+                            return servers[lastElementIndex].getPortAddress();
+                        }else return null;
+                    }
+                previousEntry = serverEntry.Value;
+            }
+            return null; //nunca deve acontecer, eu devo estar presente nesta lista... sempre...
+        }
+
         //Used by Server, Master
         //Insere 1 servidor no dicionario ordenado
         //<int beginInterval, objct<int beginIntv, int endInterv, string portAddr>>
@@ -35,6 +95,7 @@ namespace PADI_DSTM
             string serverToSplit = "";
             ServerInfo entry = new ServerInfo(-1, 0, null);
             ServerInfo requesterSInfo = new ServerInfo(-1,-1, requester); //inicializacao so por causa do warning
+
             foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
             {
                 //procura o servidor que eh responsavel pelo maior intervalo
@@ -57,9 +118,21 @@ namespace PADI_DSTM
             {
                 //remove a entrada referente ao servidor cujo intervalo vai ser dividido
                 servers.Remove(entry.getBegin()); 
+
                 //constroi os novos intervalos
-                ServerInfo i1 = new ServerInfo(entry.getBegin(), entry.getBegin() + ((entry.getEnd() - entry.getBegin()) / 2), serverToSplit);
-                ServerInfo i2 = new ServerInfo((entry.getBegin() + (entry.getEnd() - entry.getBegin()) / 2) + 1, entry.getEnd(), newServerAddrPort);
+                ServerInfo i1 = new ServerInfo(0, 0, null);
+                ServerInfo i2 = new ServerInfo(0, 0, null);
+                if (entry.getBegin() < entry.getEnd())
+                {
+                    i1 = new ServerInfo(entry.getBegin(), entry.getBegin() + ((entry.getEnd() - entry.getBegin()) / 2), serverToSplit);
+                    i2 = new ServerInfo((entry.getBegin() + (entry.getEnd() - entry.getBegin()) / 2) + 1, entry.getEnd(), newServerAddrPort);
+                }
+                else
+                {
+                    i1 = new ServerInfo(0, entry.getEnd(), serverToSplit);
+                    i2 = new ServerInfo(entry.getBegin(), Int32.MaxValue, newServerAddrPort);
+                }
+
                 servers.Add(i1.getBegin(), i1); //antigo com o intervalo mais curto
                 servers.Add(i2.getBegin(), i2); //new server
                 //Verifica se o requester foi afectado, actualiza o sInfo a ser retornado
@@ -70,6 +143,71 @@ namespace PADI_DSTM
             if (serverToSplit.Equals(""))
                 serverToSplit = null;
             return new SInfoPackage(requesterSInfo, serverToSplit);
+        }
+
+        //Retira o servidor crashado da lista dos servidores, actualiza a serverInfo do server que esta a tentar remover o
+        //crashado das suas listas
+        public static SInfoPackage RemoveServer(string crashedServerAddrPort, SortedDictionary<int, ServerInfo> servers, string requester)
+        {
+            int crashedIntervalBegin = 0;
+            Boolean passingFirstServer = true;
+            ServerInfo firstServer = new ServerInfo(-1, 0, null);
+            Boolean foundCrashedServer = false;
+            string serverToAglomerate = "";
+            ServerInfo entry = new ServerInfo(-1, 0, null);
+            ServerInfo requesterSInfo = new ServerInfo(-1, -1, requester); //inicializacao so por causa do warning
+
+            foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
+            {
+                if (passingFirstServer)
+                {
+                    passingFirstServer = false;
+                    firstServer = serverEntry.Value;
+                }
+                if (serverEntry.Value.getPortAddress().Equals(crashedServerAddrPort))
+                {
+                    crashedIntervalBegin = serverEntry.Value.getBegin();
+                    foundCrashedServer = true;
+                }
+                else
+                {
+                    //procura o servidor que vai aglomerar o intervalo do que caiu
+                    if (foundCrashedServer)
+                    {
+                        entry = serverEntry.Value;
+                        serverToAglomerate = entry.getPortAddress();
+                        foundCrashedServer = false; //impede de entrar aqui outra vez
+                    }
+                    //procura o ServerInfo do requester, para no fim o devolver (se este nao foi actualizado)
+                    if (requester != null && serverEntry.Value.getPortAddress().Equals(requester)) //requester == null se for o master a chamar este metodo
+                        requesterSInfo = serverEntry.Value;
+                }
+            }
+            if (serverToAglomerate.Equals(""))
+            { //Se chegou aqui eh pq quem aglomera eh o primeiro (com o ultimo)
+                entry = firstServer;
+                serverToAglomerate = entry.getPortAddress();
+            }
+            
+            //constroi o novo intervalo aglomerado
+            ServerInfo i1 = new ServerInfo(crashedIntervalBegin, entry.getEnd(), entry.getPortAddress());
+            //remove a entrada do servidor que crashou
+            servers.Remove(crashedIntervalBegin);
+            //remove a entrada referente ao servidor cujo intervalo vai ser dividido
+            servers.Remove(entry.getBegin());
+
+            //Se removendo o que crashou ficar so um servidor, este tem o range todo!
+            if (servers.Count == 0)
+            {
+                i1.setBegin(0);
+                i1.setEnd(Int32.MaxValue);
+            }
+            servers.Add(i1.getBegin(), i1); //adiciona o novo com o intervalo maior
+            //Verifica se o requester foi afectado, actualiza o sInfo a ser retornado
+            if (requester != null && serverToAglomerate.Equals(requester))
+                requesterSInfo = i1;
+
+            return new SInfoPackage(requesterSInfo, serverToAglomerate);
         }
 
         //Used by: Servers, Master
@@ -227,6 +365,21 @@ namespace PADI_DSTM
             }
             else
                 Console.WriteLine("Empty!");
+        }
+
+        public static void ShowReplicas(SortedDictionary<int, PadIntInsider> replicatedPadInts)
+        {
+            Console.WriteLine("=== Replicas ===");
+            if (replicatedPadInts.Count == 0)
+            {
+                Console.WriteLine("Empty!");
+                return;
+            }
+            else
+            {
+                foreach (PadIntInsider padint in replicatedPadInts.Values)
+                    Console.WriteLine("Uid: " + padint.UID + ", commited write: " + padint.COMMITWRITE);
+            }
         }
 
         public static void ShowTxObjectsList(SortedDictionary<int, List<int>> txObjList)

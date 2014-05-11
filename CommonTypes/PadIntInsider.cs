@@ -41,11 +41,13 @@ namespace PADI_DSTM
         public int COMMITREAD
         {
             get { return committedRead; }
+            set { this.committedRead = value; }
         }
 
         public Tuple<int, int> COMMITWRITE
         {
             get { return committedWrite; }
+            set { this.committedWrite = value; }
         }
         public List<int> TENTREADS
         {

@@ -21,7 +21,13 @@ namespace PADI_DSTM
 
         public int getBegin() { return begin; }
         public int getEnd() { return end; }
-        public int getSize() { return (end - begin); }
+        public int getSize()
+        {
+            if (begin > end)
+                return (Int32.MaxValue - begin + end);
+            else
+                return (end - begin);
+        }
         public string getPortAddress() { return portAddress; }
 
         public void setBegin(int b) { this.begin = b; }

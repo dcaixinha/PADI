@@ -91,11 +91,13 @@ namespace Server {
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         
         private SortedDictionary<int, PadIntInsider> myPadInts = new SortedDictionary<int, PadIntInsider>(); //uid, padint
+        private SortedDictionary<int, PadIntInsider> replicatedPadInts = new SortedDictionary<int, PadIntInsider>();
         private ServerInfo mySInfo = new ServerInfo(0,0,"");//Guarda o meu intervalo (begin, end, portAdress) 
                                                             //Ter acesso directo a esta estrutura permite rapida
                                                             //verificacao se eh preciso ou nao redistribuir certo padint
         // Lista mantida pelo coordenador
         // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit
+        // <txId, lista< uid > >
         private SortedDictionary<int, List<int>> txObjCoordList = new SortedDictionary<int, List<int>>();
 
         // Lista mantida pelos responsaveis por objectos envolvidos em txs
@@ -172,43 +174,49 @@ namespace Server {
                 }
             }
             //Depois de notificar todos, vou contactar o servidor que podera ter objectos para mim, se esse
-            //servidor existir
+            //servidor existir (se eu nao for o primeiro)
             if (serverWhoHasMyObjects != null)
             {
-                ServerPackage serverPack = new ServerPackage(null, null, null);
+                ServerPackage serverPack = new ServerPackage(null, null, null, null);
                 try
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + serverWhoHasMyObjects + "/Server");
-                    serverPack = serv.GiveObjectsTo(myself);
+                    serverPack = serv.GiveMeMyObjects();
                 }
                 catch (Exception e) { Console.WriteLine(e); }
-                List<PadIntInsider> receivedList = serverPack.getPadintToSendList();
-                Dictionary<int, int> receivedObjTxDict = serverPack.getObjTxToSendDict();
-                Dictionary<int, int> receivedObjCreatedTxDict = serverPack.getObjCreatedTxToSendDict();
-                lock (txLock)
+                List<PadIntInsider> receivedList = serverPack.GetPadintToSendList();
+                Dictionary<int, int> receivedObjTxDict = serverPack.GetObjTxToSendDict();
+                Dictionary<int, int> receivedObjCreatedTxDict = serverPack.GetObjCreatedTxToSendDict();
+                List<PadIntInsider> receivedReplicas = serverPack.GetReplicas();
+                
+
+                if (receivedList != null && receivedList.Count != 0)
                 {
-                    if (receivedList != null && receivedList.Count != 0)
+                    foreach (PadIntInsider padint in receivedList)
                     {
-                        foreach (PadIntInsider padint in receivedList)
+                        lock (txLock)
                         {
                             myPadInts.Add(padint.UID, padint);
-                            //Create a lock for each padint received
-                            padintsLock.EnterWriteLock();
-                            try
-                            {
-                                padintLocks[padint.UID] = new Object();
-                            }
-                            finally
-                            {
-                                padintsLock.ExitWriteLock();
-                            }
-                            
                         }
+                        //Create a lock for each padint received
+                        padintsLock.EnterWriteLock();
+                        try
+                        {
+                            padintLocks[padint.UID] = new Object();
+                        }
+                        finally
+                        {
+                            padintsLock.ExitWriteLock();
+                        }
+                            
                     }
-                    if (receivedObjTxDict != null && receivedObjTxDict.Count != 0)
+                }
+                if (receivedObjTxDict != null && receivedObjTxDict.Count != 0)
+                {
+                    foreach (KeyValuePair<int, int> kvp in receivedObjTxDict)
                     {
-                        foreach (KeyValuePair<int, int> kvp in receivedObjTxDict)
+                        lock (txLock)
                         {
                             int txId = kvp.Value;
                             int uid = kvp.Key;
@@ -217,9 +225,12 @@ namespace Server {
                             txObjList[txId].Add(uid);
                         }
                     }
-                    if (receivedObjCreatedTxDict != null && receivedObjCreatedTxDict.Count != 0)
+                }
+                if (receivedObjCreatedTxDict != null && receivedObjCreatedTxDict.Count != 0)
+                {
+                    foreach (KeyValuePair<int, int> kvp in receivedObjCreatedTxDict)
                     {
-                        foreach (KeyValuePair<int, int> kvp in receivedObjCreatedTxDict)
+                        lock (txLock)
                         {
                             int txId = kvp.Value;
                             int uid = kvp.Key;
@@ -229,8 +240,16 @@ namespace Server {
                         }
                     }
                 }
+                //Faz os set ahs suas proprias replicas com o conteudo que vinha no serverPackage, e envia as 
+                //as suas proprias replicas para o seu next
+                SetReplicas(receivedReplicas);
+                //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
+                SendNewReplicas(MakeReplicas());
             }
-            waitingForObjects = false; //ja nao estou ah espera quando recebo objectos.
+            lock (txLock)
+            {
+                waitingForObjects = false; //ja nao estou ah espera quando recebo objectos.
+            }
         }
 
         //Server-Server
@@ -247,18 +266,15 @@ namespace Server {
             if (doesNotContainServer) //se ainda nao contem o elemento
             {
                 ServerInfo newMySInfo;
-                int oldIntervalEnd;
+                string affectedServer = "";
                 lock (serverLock)
                 {
                     //Insere o novo servidor na lista de servers, e retorna o meu novo (ou nao) ServerInfo
                     newMySInfo = DstmUtil.InsertServer(serverAddrPort, servers, myself).getServerInfo();
                 }
-                lock(txLock){
-                    oldIntervalEnd = mySInfo.getEnd();
-                }
-                //Verificar se eu fui afectado pela entrada (os novos ficam sempre com a 2a metade
-                //do intervalo original, por isso basta ver se o limite superior do meu intervalo mudou)
-                if (oldIntervalEnd != newMySInfo.getEnd())
+                affectedServer = newMySInfo.getPortAddress();
+                //Verificar se eu fui afectado pela entrada
+                if (affectedServer.Equals(myself))
                 {
                     List<PadIntInsider> padints;
                     lock(txLock){
@@ -299,12 +315,13 @@ namespace Server {
         }
 
         //Server-Server
-        //O servidor que entrou chama este metodo no servidor que podera ter objectos seus
-        public ServerPackage GiveObjectsTo(string serverAddrPort)
+        //O servidor que entrou chama este metodo no servidor que podera ter objectos do novo.
+        //Este metodo so eh chamado quando o que entrou tem ja recebeu return de todos, i.e.
+        //tal como num 2-phase, so vou pedir os objectos quando ja todos souberem que eu sou
+        //o novo responsavel pelo range desses objectos.
+        public ServerPackage GiveMeMyObjects()
         {
             //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
-            //TODO: so posso enviar quando tiver a certeza que nao estao envolvidos em
-            //nenhuma das minhas tx (ou de qualquer um...)... sera que isto eh problema?
             if (padintToSendList.Count != 0)
             {
                 lock (txLock)
@@ -356,7 +373,18 @@ namespace Server {
                         }
                     }
                 }
-                ServerPackage pack = new ServerPackage(padintToSendList, objTxToSendDict, objCreatedTxToSendDict);
+                //crio as replicas para enviar ao novo
+                List<PadIntInsider> replicas = new List<PadIntInsider>();
+                lock (txLock)
+                {
+                    //removo da minha lista de padints
+                    foreach(PadIntInsider padint in myPadInts.Values)
+                    {
+                        replicas.Add(DstmUtil.GetPadintReplicaFrom(padint));
+                    }
+                }
+
+                ServerPackage pack = new ServerPackage(padintToSendList, objTxToSendDict, objCreatedTxToSendDict, replicas);
                 //Reset the send lists
                 objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
@@ -373,9 +401,16 @@ namespace Server {
                 objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 padintToSendList = new List<PadIntInsider>();
-                return new ServerPackage(null, null, null);
+                return new ServerPackage(null, null, null, null);
             }
-        }     
+        }
+
+        //Server-Server
+        //Method called by the server who aglomerates on its new previous server.
+        public List<PadIntInsider> GiveMeYourReplicas()
+        {
+            return MakeReplicas();
+        }
 
         //Client-Server
         public bool TxBegin(string clientAddressPort)
@@ -434,6 +469,12 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     serv.CreatePadInt(uid, txId);
                 }
+                //Server failure detection
+                catch (System.Runtime.Remoting.RemotingException) 
+                { 
+                    StartRecoveryChain(responsible); 
+                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                }
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
@@ -485,6 +526,13 @@ namespace Server {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + responsible + "/Server");
                     serv.AccessPadInt(uid, txId);
+                }
+                //Server failure detection
+                catch (System.Runtime.Remoting.RemotingException)
+                {
+                    StartRecoveryChain(responsible);
+                    //Console.WriteLine("Access detected a fail!!!#####################################");
+                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -539,6 +587,12 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     value = serv.Read(uid, txId);
                 }
+                //Server failure detection
+                catch (System.Runtime.Remoting.RemotingException)
+                {
+                    StartRecoveryChain(responsible);
+                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                }
                 catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -576,6 +630,12 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     serv.Write(uid, txId, value);
                 }
+                //Server failure detection
+                catch (System.Runtime.Remoting.RemotingException)
+                {
+                    StartRecoveryChain(responsible);
+                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                }
                 catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -612,9 +672,19 @@ namespace Server {
             {
                 if (!server.Equals(myself))
                 {
-                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                        "tcp://" + server + "/Server");
-                    canCommit = serv.CanCommit(txId);
+                    try
+                    {
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + server + "/Server");
+                        canCommit = serv.CanCommit(txId);
+                    }
+                    //Server failure detection
+                    catch (System.Runtime.Remoting.RemotingException)
+                    {
+                        StartRecoveryChain(server);
+                        canCommit = false;
+                        //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    }
                     if (canCommit)
                         numWaitingResponse--;
                 }
@@ -632,9 +702,18 @@ namespace Server {
                 {
                     if (!server.Equals(myself))
                     {
-                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                            "tcp://" + server + "/Server");
-                        serv.Commit(txId);
+                        try
+                        {
+                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                                "tcp://" + server + "/Server");
+                            serv.Commit(txId);
+                        }
+                        //Server failure detection
+                        catch (System.Runtime.Remoting.RemotingException)
+                        {
+                            StartRecoveryChain(server);
+                            //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                        }
                     }
                     else Commit(txId); //O proprio faz commit se pertencer a esta lista de responsaveis
                 }
@@ -692,9 +771,18 @@ namespace Server {
             { //TODO: paralelizar o envio destes pedidos
                 if (!server.Equals(myself))
                 {
-                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                        "tcp://" + server + "/Server");
-                    serv.Abort(txId);
+                    try
+                    {
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + server + "/Server");
+                        serv.Abort(txId);
+                    }
+                    //Server failure detection
+                    catch (System.Runtime.Remoting.RemotingException)
+                    {
+                        StartRecoveryChain(server);
+                        //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    }
                 }
                 else
                 {
@@ -719,6 +807,8 @@ namespace Server {
         //Se o coordenador for ele proprio o responsavel, entao este metodo eh chamado localmente
         public void CreatePadInt(int uid, int txId)
         {
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -775,6 +865,8 @@ namespace Server {
         //atraves de uma chamada remota pelo protocolo...
         public void AccessPadInt(int uid, int txId)
         {
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -806,6 +898,8 @@ namespace Server {
 
         //Server-Server
         public int Read(int uid, int txId) {
+
+            threadSafeStateCheck();
 
             Boolean isWaiting;
             lock (txLock)
@@ -860,6 +954,8 @@ namespace Server {
         //Server-Server
         public void Write(int uid, int txId, int value) {
 
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -907,6 +1003,8 @@ namespace Server {
         //DUVIDA: em que situacao o canCommit retorna false?
         public bool CanCommit(int txId)
         {
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -960,6 +1058,8 @@ namespace Server {
         //Server-Server
         public void Commit(int txId)
         {
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -984,6 +1084,8 @@ namespace Server {
             }
             Object padintLock;
             PadIntInsider padint;
+            //Make replicas of the objects used in this Tx
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             foreach (int uid in uids)
             {
                 lock (txLock)
@@ -1013,6 +1115,8 @@ namespace Server {
                     if (result == -4)
                         System.Threading.Thread.Sleep(250);
                 }
+                //criar uma replica deste padint e adicionar ah lista que mais tarde sera enviada
+                replicasToSend.Add(DstmUtil.GetPadintReplicaFrom(padint));
             }
             lock (txLock)
             {
@@ -1021,11 +1125,15 @@ namespace Server {
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
+            //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
+            SendUpdatedReplicas(replicasToSend);
         }
 
         //Server-Server
         public void Abort(int txId)
         {
+            threadSafeStateCheck();
+
             Boolean isWaiting;
             lock (txLock)
             {
@@ -1084,6 +1192,221 @@ namespace Server {
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
+        }
+
+        //Server-Server
+        //Metodo chamado quando um servidor faz commit num grupo de objectos seus no contexto de uma tx
+        //para actualizar as replicas no servidor seguinte
+        public void UpdateReplicas(List<PadIntInsider> replicasToSend)
+        {
+            //Tem de actualizar as replicas
+            lock (txLock)
+            {
+                foreach(PadIntInsider replica in replicasToSend){
+                    replicatedPadInts[replica.UID] = replica;
+                }
+            }
+        }
+
+        //Server-server
+        //Metodo chamado para fazer set ahs replicas, apagando quaisquer replicas pre-existentes
+        //Eh chamado quando entra um novo servidor, pelo novo sobre o seu next.
+        //O servidor que antecede o novo vai enviar-lhe as replicas num ServerPackage como resposta
+        //ah chamada ao metodo SendObjectsTo, de seguida o novo executa este metodo em si proprio.
+        //Tambem eh chamado quando alguem crasha, pelo novo responsavel sobre o seu next.
+        public void SetReplicas(List<PadIntInsider> replicasToSend)
+        {
+            if (replicasToSend != null)
+            {
+                //Tem de actualizar as replicas
+                lock (txLock)
+                {
+                    replicatedPadInts.Clear();
+                    foreach (PadIntInsider replica in replicasToSend)
+                    {
+                        replicatedPadInts[replica.UID] = replica;
+                    }
+                }
+            }
+        }
+
+        //Server-Server
+        public void UpdateNetworkAfterCrash(string crashedServerAddrPort){
+            SInfoPackage pack;
+            ServerInfo newMySInfo;
+            int myBeginInterval;
+            string newServerResponsible;
+            lock (serverLock)
+            {
+                //Removo o servidor que crashou da lista de servers, e retorna o meu novo (ou nao) ServerInfo
+                pack = DstmUtil.RemoveServer(crashedServerAddrPort, servers, myself);
+                newMySInfo = pack.getServerInfo();
+                newServerResponsible = pack.getServerWhoTransfers(); //no caso de saidas este campo indica o servidor que aglomera
+            }
+            //Verificar se eu fui afectado pela saida. Se fui afectado tenho que passar as minhas replicas
+            //para padints, e tenho de contactar o meu novo previous para obter as replicas dele. E finalmente
+            //tenho de enviar as minhas replicas para o meu next.
+            //Console.WriteLine("new guy: '" + newServerResponsible + "' myself: '" + myself + "' #######################");
+            if (newServerResponsible.Equals(myself))
+            {
+                //Console.WriteLine("I AM THE SERVER RESPOSIBLE NOW!! ############################################");
+                List<PadIntInsider> replicas;
+                lock (txLock)
+                {
+                    //Se sim, tenho de actualizar o mySInfo
+                    mySInfo = newMySInfo;
+                    myBeginInterval = mySInfo.getBegin();
+                    replicas = replicatedPadInts.Values.ToList();
+                }
+                //Pegar nas minha replicas e adicionar aos meus padints, porque eu agora controlo todos
+                foreach (PadIntInsider padint in replicas)
+                {
+                    lock(txLock){
+                        replicatedPadInts.Remove(padint.UID);
+                        myPadInts.Add(padint.UID, padint);
+                    }
+                    //Cria o lock para este padint
+                    padintsLock.EnterWriteLock();
+                    try
+                    {
+                        padintLocks[padint.UID] = new Object();
+                    }
+                    finally
+                    {
+                        padintsLock.ExitWriteLock();
+                    }
+                }
+                //Contactar o meu novo previous para obter as replicas dele
+                string previousServer = null;
+                lock(serverLock){
+                    previousServer = DstmUtil.GetPreviousServer(myBeginInterval, servers);
+                }
+                List<PadIntInsider> receivedReplicas = null;
+                if (previousServer != null)
+                {
+                    try
+                    {
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + previousServer + "/Server");
+                        receivedReplicas = serv.GiveMeYourReplicas();
+                    }
+                    catch (Exception e) { Console.WriteLine(e); }
+                    UpdateReplicas(receivedReplicas);
+                }
+                //Enviar as minhas replicas para o meu next
+                SendNewReplicas(MakeReplicas());
+            }
+            //Se nao fui afectado pela saida nao faco mais nada
+        }
+
+        //Internal method - ALREADY LOCK PROTECTED!
+        //Makes replicas from myPadInts (only if those padints have a committed write version)
+        private List<PadIntInsider> MakeReplicas()
+        {
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
+            lock (txLock)
+            {
+                foreach (PadIntInsider padint in myPadInts.Values)
+                {
+                    if (!padint.COMMITWRITE.Equals(Tuple.Create(0, 0))) //so copia se ja tiver uma versao committed
+                        replicasToSend.Add(DstmUtil.GetPadintReplicaFrom(padint));
+                }
+            }
+            return replicasToSend;
+        }
+
+        //Internal method
+        //Receives the addrPort of the failed server and starts the chain to remove this server from the network
+        private void StartRecoveryChain(string crashedServerAddrPort)
+        {
+            //Contacto o master a indicar que este servidor caiu, recebo como resposta do master
+            //se eu fui o primeiro a descobrir a falha. Se eu nao fui o primeiro nao faço mais nada,
+            //porque ja esta alguem a tratar disso. Se for eu o primeiro a detectar, tenho d avisar os
+            //restantes para que eles possam retirar este servidor das suas listas.
+
+            //Contacta o master para avisar do crash detectado
+            IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
+                "tcp://" + ServerNode.masterAddrPort + "/Master");
+            Boolean iDetectedFirst = master.DetectedCrash(crashedServerAddrPort); 
+            //Se eu for o primeiro a detectar tenho de retirar da minha lista, e avisar os restantes
+            if (iDetectedFirst)
+            {
+                UpdateNetworkAfterCrash(crashedServerAddrPort); //altera o servers localmente
+                //Ja so envio para todos menos o que crashou, pq eu ja o removi
+                List<ServerInfo> serversInfo;
+                lock (serverLock)
+                {
+                    serversInfo = servers.Values.ToList();
+                }
+                //Notify all others of the update
+                foreach (ServerInfo sInfo in serversInfo)
+                {
+                    string server = sInfo.getPortAddress();
+                    if (!server.Equals(myself))
+                    {
+                        try
+                        {
+                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                                "tcp://" + server + "/Server");
+                            serv.UpdateNetworkAfterCrash(crashedServerAddrPort);
+                        }
+                        catch (Exception e) { Console.WriteLine(e); }
+                    }
+                }
+            }
+            //Se nao fui o primeiro a detectar, nao preciso de fazer mais nada (o primeiro vai contactar-me)
+        }
+
+        //Internal method
+        //Sends a list of replicas to the next, which will reset its replica list and set this list as the new list.
+        private void SendNewReplicas(List<PadIntInsider> replicasToSend)
+        {
+            int myBeginInterval;
+            string nextServerAddrPort;
+            lock (txLock)
+            {
+                myBeginInterval = mySInfo.getBegin();
+            }
+            lock (serverLock)
+            {
+                nextServerAddrPort = DstmUtil.GetNextServer(myBeginInterval, servers);
+            }
+            try
+            {
+                if (nextServerAddrPort != null) //If i'm the only server, there's no point in sending replicas to myself
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + nextServerAddrPort + "/Server");
+                    serv.SetReplicas(replicasToSend);
+                }
+            }
+            catch (Exception e) { Console.WriteLine(e); }
+        }
+
+        //Internal Method
+        //Sends a list of replicas to the next server, who will update the ones received
+        private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend)
+        {
+            int myBeginInterval;
+            string nextServerAddrPort;
+            lock (txLock)
+            {
+                myBeginInterval = mySInfo.getBegin();
+            }
+            lock (serverLock)
+            {
+                nextServerAddrPort = DstmUtil.GetNextServer(myBeginInterval, servers);
+            }
+            try
+            {
+                if (nextServerAddrPort != null) //If i'm the only server, there's no point in sending replicas to myself
+                {
+                    IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                        "tcp://" + nextServerAddrPort + "/Server");
+                    serv.UpdateReplicas(replicasToSend);
+                }
+            }
+            catch (Exception e) { Console.WriteLine(e); }
         }
 
         public bool Fail()
@@ -1228,6 +1551,7 @@ namespace Server {
                 DstmUtil.ShowTxServersList(txObjCoordList, servers);
                 DstmUtil.ShowServerIntervals(mySInfo);
                 DstmUtil.ShowPadIntsList(myPadInts);
+                DstmUtil.ShowReplicas(replicatedPadInts);
                 DstmUtil.ShowTxObjectsList(txObjList);
                 DstmUtil.ShowTxCreatedObjectsList(txCreatedObjList);
             }
