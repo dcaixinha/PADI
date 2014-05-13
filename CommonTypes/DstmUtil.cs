@@ -25,7 +25,19 @@ namespace PADI_DSTM
             return localIP;
         }
 
-        //Returns a replica of the current padint (committed values only)
+        //Returns a FULL replica of the current padint, used on can commit
+        public static PadIntInsider GetPadintFullReplicaFrom(PadIntInsider padint)
+        {
+            int uid = padint.UID;
+            PadIntInsider replica = new PadIntInsider(uid);
+            replica.COMMITREAD = padint.COMMITREAD;
+            replica.COMMITWRITE = padint.COMMITWRITE;
+            replica.TENTREADS = padint.TENTREADS;
+            replica.TENTWRITES = padint.TENTWRITES;
+            return replica;
+        }
+
+        //Returns a replica of the current padint (committed values only), used on commit
         public static PadIntInsider GetPadintReplicaFrom(PadIntInsider padint)
         {
             int uid = padint.UID;
@@ -57,6 +69,33 @@ namespace PADI_DSTM
             }
             //Se chegou ao fim sem retornar eh pq o proximo eh o primeiro elemento ou se nao ha elementos...
             if (firstServer != null && firstServer.getBegin() != beginInterval )
+                return firstServer.getPortAddress();
+            else return null;
+        }
+
+        //Method override
+        //Returns null if no elements, or if theres only one element
+        //Returns the next element from serverAddrPort
+        public static string GetNextServer(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
+        {
+            Boolean passingFirstServer = true;
+            ServerInfo firstServer = null;
+            Boolean foundMyself = false;
+            foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
+            {
+                if (passingFirstServer)
+                {
+                    passingFirstServer = false;
+                    firstServer = serverEntry.Value;
+                }
+                if (foundMyself) //se no ciclo anterior eu me encontrei, este eh o meu next
+                    return serverEntry.Value.getPortAddress();
+                //procuro-me a mim
+                if (serverEntry.Value.getPortAddress() == serverAddrPort)
+                    foundMyself = true;
+            }
+            //Se chegou ao fim sem retornar eh pq o proximo eh o primeiro elemento ou se nao ha elementos...
+            if (firstServer != null && firstServer.getPortAddress() != serverAddrPort)
                 return firstServer.getPortAddress();
             else return null;
         }

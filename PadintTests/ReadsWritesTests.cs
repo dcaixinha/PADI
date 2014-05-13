@@ -181,13 +181,12 @@ namespace TestsPadint
                 PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
             }
-            catch (TxException e) { Console.WriteLine(e.reason); }
-            catch (System.Runtime.Remoting.RemotingException) 
+            catch (TxException)
             {
                 PadiDstm.CloseChannel();
                 PadiDstm.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");       // Repor o estado do servidor...
                 Console.WriteLine("Caught remoting exception!");
-                Console.WriteLine("TEST PASSED!\r\n"); 
+                Console.WriteLine("TEST PASSED!\r\n");
             }
 
         }

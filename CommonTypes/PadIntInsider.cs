@@ -52,10 +52,12 @@ namespace PADI_DSTM
         public List<int> TENTREADS
         {
             get { return tentativeReads; }
+            set { this.tentativeReads = value; }
         }
         public Dictionary<int, int> TENTWRITES
         {
             get { return tentativeWrites; }
+            set { this.tentativeWrites = value; }
         }
 
         public int Read(int txId)

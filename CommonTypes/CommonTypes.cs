@@ -38,9 +38,11 @@ namespace PADI_DSTM
         void Abort(int txId);
         ServerPackage GiveMeMyObjects();
         void SetReplicas(List<PadIntInsider> replicas);
-        void UpdateReplicas(List<PadIntInsider> replicasToSend);
+        void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend);
         void UpdateNetworkAfterCrash(string crashedServerAddrPort);
         List<PadIntInsider> GiveMeYourReplicas();
+        void CommitReplicas(int txId);
+        void AbortReplicas(int txId);
     }
 
     public interface IServerMaster
@@ -52,7 +54,8 @@ namespace PADI_DSTM
     {
         MasterPackage RegisterServer(string port);
         int getTxId();
-        Boolean DetectedCrash(string crashedServerAddrPort); 
+        Boolean DetectedCrash(string crashedServerAddrPort);
+        string GetNextToCrashed(string crashedAddrPort);
     }
 
     public interface IMasterClient

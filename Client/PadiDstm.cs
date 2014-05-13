@@ -89,12 +89,16 @@ namespace PADI_DSTM
             }
             catch (SocketException)
             {
-                throw new Exception("Falhou a tentar começar uma Tx!");
+                throw new TxException("Falhou a tentar começar uma Tx!");
             }
             catch (TxException e)
             {
                 Console.WriteLine("TxException: " + e.reason);
                 return false;
+            }
+            catch (RemotingException) //coordenador em baixo
+            {
+                throw new TxException("Falhou a tentar começar uma Tx!");
             }
         }
 
@@ -107,6 +111,11 @@ namespace PADI_DSTM
                 return result;
             }
             catch (TxException) { throw; }
+            catch (RemotingException) //coordenador em baixo
+            {
+                //TODO avisar o master para mandar abortar as tx q o servidor q caiu tinha
+                throw new TxException("Falhou ao tentar criar um padint!");
+            }
 
         }
 
@@ -119,6 +128,11 @@ namespace PADI_DSTM
                 return result;
             }
             catch (TxException) { throw; }
+            catch (RemotingException) //coordenador em baixo
+            {
+                //TODO avisar o master para mandar abortar as tx q o servidor q caiu tinha
+                throw new TxException("Falhou ao tentar aceder o padint " + uid);
+            }
         }
 
         public static bool TxCommit()

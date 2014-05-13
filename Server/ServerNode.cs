@@ -104,11 +104,16 @@ namespace Server {
         // <txId, lista< uid > >
         private SortedDictionary<int, List<int>> txObjList = new SortedDictionary<int, List<int>>();
 
+        // Lista mantida por quem tem replicas do seu previous
+        // <txId, lista< uid > >
+        private SortedDictionary<int, List<int>> txReplicatedObjList = new SortedDictionary<int, List<int>>();
+
         // Eh preciso manter uma lista nos responsaveis, dos objectos criados na tx actual, para em caso de abort,
         // o objecto ser removido <txId, lista<uid>>
         private SortedDictionary<int, List<int>> txCreatedObjList = new SortedDictionary<int, List<int>>();
 
         private string myself;
+        private Boolean midRecovery = false;
 
         //Pedidos pendentes (durante o freeze) para este servidor < nome do comando, lista de argumentos > 
         private Queue<Action> pendingCommands = new Queue<Action>();
@@ -126,6 +131,9 @@ namespace Server {
         private Object txLock = new Object(); //protects all tx tables (and padints -> not anymore)
         private ReaderWriterLockSlim padintsLock = new ReaderWriterLockSlim();
         private Dictionary<int, Object> padintLocks = new Dictionary<int, Object>(); //this will be protected by txLock
+
+        private ReaderWriterLockSlim replicasLock = new ReaderWriterLockSlim();
+        private Dictionary<int, Object> replicaLocks = new Dictionary<int, Object>(); //this will be protected by txLock
 
         private Boolean waitingForObjects = true;
         //Enquanto este waiting tiver a false, lanca phantomException nos metodos que sao chamados entre
@@ -476,7 +484,8 @@ namespace Server {
                 catch (System.Runtime.Remoting.RemotingException) 
                 { 
                     StartRecoveryChain(responsible); 
-                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
+                    throw new TxException("The server responsible for this range was down!");
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -534,8 +543,8 @@ namespace Server {
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //Console.WriteLine("Access detected a fail!!!#####################################");
-                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
+                    throw new TxException("The server responsible for this range was down!");
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -590,13 +599,14 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     value = serv.Read(uid, txId);
                 }
+                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 //Server failure detection
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
+                    throw new TxException("The server responsible for this range was down!");
                 }
-                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
@@ -633,13 +643,14 @@ namespace Server {
                         "tcp://" + responsible + "/Server");
                     serv.Write(uid, txId, value);
                 }
+                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 //Server failure detection
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
+                    throw new TxException("The server responsible for this range was down!");
                 }
-                catch (TxException) { throw; } //Quando tenta ler de um servidor q ainda n tem o objecto (vindo d redistribuicao)
                 catch (Exception e) { Console.WriteLine(e); }
             }
             else //o proprio eh o responsavel
@@ -649,7 +660,6 @@ namespace Server {
         }
 
         //Client-Server
-        //DUVIDA: em q situações devolve false e em q situaçoes lança except
         public bool TxCommit(string clientAddressPort) 
         {
             threadSafeStateCheck();
@@ -686,7 +696,9 @@ namespace Server {
                     {
                         StartRecoveryChain(server);
                         canCommit = false;
-                        //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                        //If one server fails and cannot answer canCommit, this tx will have to abort
+                        //because its during the canCommit that it will send replicas with tentative versions
+                        //to its next server
                     }
                     if (canCommit)
                         numWaitingResponse--;
@@ -698,6 +710,23 @@ namespace Server {
                         numWaitingResponse--;
                 }
             }
+            //Antes de avancar tenho de ter a certeza de que nao estou a meio de um processo de recuperacao
+            //depois de uma falha, para garantir que tenho as tabelas actualizadas
+            Boolean isInRecovery;
+            lock (txLock)
+            {
+                isInRecovery = midRecovery;
+            }
+            while (isInRecovery)
+            {
+                lock (txLock)
+                {
+                    isInRecovery = midRecovery;
+                }
+                if (isInRecovery)
+                    System.Threading.Thread.Sleep(250);
+            }
+
             //Se todos responderam ao canCommit: Envio dos commits a todos
             if (numWaitingResponse == 0)
             {
@@ -715,7 +744,18 @@ namespace Server {
                         catch (System.Runtime.Remoting.RemotingException)
                         {
                             StartRecoveryChain(server);
-                            //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                            //Contacta o master para obter o servidor a seguir ao que falhou. Isto garante
+                            //que mesmo que eu ja tenha sido actualizado pelo primeiro que detectou a falha,
+                            //tenho o servidor seguinte ao que crashou correcto.
+                            IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
+                                "tcp://" + ServerNode.masterAddrPort + "/Master");
+                            string serverNextToFailed = master.GetNextToCrashed(server);
+                            //Se algum foi abaixo antes de poder ser commitado, 
+                            //eh preciso enviar a ordem de commit ao novo servidor responsavel,
+                            //ou seja ao seu next antigo onde estao as replicas enviadas durante o canCommit...
+                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                                "tcp://" + serverNextToFailed + "/Server");
+                            serv.CommitReplicas(txId);
                         }
                     }
                     else Commit(txId); //O proprio faz commit se pertencer a esta lista de responsaveis
@@ -727,13 +767,32 @@ namespace Server {
             {
                 foreach (string server in serverList)
                 {
-                    if (!server.Equals(myself))
+                    try
                     {
-                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                            "tcp://" + server + "/Server");
-                        serv.Abort(txId);
+                        if (!server.Equals(myself))
+                        {
+                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                                "tcp://" + server + "/Server");
+                            serv.Abort(txId);
+                        }
+                        else Abort(txId); //O proprio faz abort se pertencer a esta lista de responsaveis
                     }
-                    else Abort(txId); //O proprio faz abort se pertencer a esta lista de responsaveis
+                    //Server failure detection
+                    catch (System.Runtime.Remoting.RemotingException){
+                        StartRecoveryChain(server);
+                        //Contacta o master para obter o servidor a seguir ao que falhou. Isto garante
+                        //que mesmo que eu ja tenha sido actualizado pelo primeiro que detectou a falha,
+                        //tenho o servidor seguinte ao que crashou correcto.
+                        IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
+                            "tcp://" + ServerNode.masterAddrPort + "/Master");
+                        string serverNextToFailed = master.GetNextToCrashed(server);
+                        //Se algum foi abaixo antes de poder ser abortado, 
+                        //eh preciso enviar a ordem de abort ao novo servidor responsavel,
+                        //ou seja ao seu next antigo para limpar as tentative versions das replicas...
+                        IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + serverNextToFailed + "/Server");
+                        serv.AbortReplicas(txId);
+                    } 
                 }
                 result = false;
             }
@@ -771,7 +830,7 @@ namespace Server {
 
             //Envio dos Aborts
             foreach (string server in serverList)
-            { //TODO: paralelizar o envio destes pedidos
+            {
                 if (!server.Equals(myself))
                 {
                     try
@@ -784,7 +843,8 @@ namespace Server {
                     catch (System.Runtime.Remoting.RemotingException)
                     {
                         StartRecoveryChain(server);
-                        //TODO envar algo para tras, para o client que indique que tem que repetir o pedido...
+                        //Se falhou ao dar abort nao faz mal pq na replica so esta a ultima versao committed
+                        //fica tudo coerente.
                     }
                 }
                 else
@@ -1003,7 +1063,8 @@ namespace Server {
         }
 
         //Server-Server
-        //DUVIDA: em que situacao o canCommit retorna false?
+        //TODO Aqui no fim do canCommit envia para o seu next, replicas dos padints envolvidos nesta tx, 
+        //juntamente a entrada na tabela tx-objs referente a esta tx
         public bool CanCommit(int txId)
         {
             threadSafeStateCheck();
@@ -1023,13 +1084,17 @@ namespace Server {
                     System.Threading.Thread.Sleep(250);
             }
 
-            bool result;
             List<int> uids;
             lock (txLock)
             {
                 //get the objects used in this txId
                 uids = txObjList[txId];
             }
+            //Obtem a entrada da txObjList referente a esta tx para enviar para a replica
+            SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            txObjListToSend.Add(txId, uids);
+            //Vai preencher a lista de padints envolvidos nesta tx para enviar para a replica
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             //for each of these objects:
             foreach (int uid in uids)
             {
@@ -1050,11 +1115,12 @@ namespace Server {
                 }
                 lock (padintLock)
                 {
-                    result = padint.CanCommit(txId);
+                    padint.CanCommit(txId);
                 }
-                if (result == false)
-                    return false;
+                replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
             }
+            //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
+            SendUpdatedReplicas(replicasToSend, txObjListToSend);
             return true;
         }
 
@@ -1128,8 +1194,10 @@ namespace Server {
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
+            SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            txObjListToSend.Add(txId, null);
             //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
-            SendUpdatedReplicas(replicasToSend);
+            SendUpdatedReplicas(replicasToSend, txObjListToSend);
         }
 
         //Server-Server
@@ -1198,15 +1266,158 @@ namespace Server {
         }
 
         //Server-Server
+        public void CommitReplicas(int txId)
+        {
+            threadSafeStateCheck();
+
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
+
+            int result;
+            List<int> uids;
+            lock (txLock)
+            {
+                //get the replicas used in this txId
+                uids = txReplicatedObjList[txId];
+            }
+            Object replicaLock;
+            PadIntInsider replica;
+            foreach (int uid in uids)
+            {
+                lock (txLock)
+                {
+                    //for each of these objects:
+                    replica = replicatedPadInts[uid];
+                }
+                replicasLock.EnterReadLock();
+                try
+                {
+                    replicaLock = replicaLocks[uid];
+                }
+                finally
+                {
+                    replicasLock.ExitReadLock();
+                }
+                lock (replicaLock)
+                {
+                    result = replica.Commit(txId);
+                }
+                while (result == -4)
+                {
+                    lock (replicaLock)
+                    {
+                        result = replica.Commit(txId);
+                    }
+                    if (result == -4)
+                        System.Threading.Thread.Sleep(250);
+                }
+            }
+            lock (txLock)
+            {
+                //Limpa a lista dos objectos que ele tem nesta tx
+                txReplicatedObjList.Remove(txId);
+            }
+        }
+
+        //Server-Server
+        public void AbortReplicas(int txId)
+        {
+            threadSafeStateCheck();
+
+            Boolean isWaiting;
+            lock (txLock)
+            {
+                isWaiting = waitingForObjects;
+            }
+            while (isWaiting)
+            {
+                lock (txLock)
+                {
+                    isWaiting = waitingForObjects;
+                }
+                if (isWaiting)
+                    System.Threading.Thread.Sleep(250);
+            }
+            List<int> uids;
+            lock (txLock)
+            {
+                //get the objects used in this txId
+                uids = txReplicatedObjList[txId];
+            }
+            Object replicaLock;
+            foreach (int uid in uids)
+            {
+                //for each of these objects:
+                PadIntInsider replica;
+                lock (txLock)
+                {
+                    replica = replicatedPadInts[uid];
+                }
+                replicasLock.EnterReadLock();
+                try
+                {
+                    replicaLock = replicaLocks[uid];
+                }
+                finally
+                {
+                    replicasLock.ExitReadLock();
+                }
+                lock (replicaLock)
+                {
+                    replica.Abort(txId);
+                }
+            }
+
+            lock (txLock)
+            {
+                //Limpa a lista dos objectos que ele tem nesta tx
+                txReplicatedObjList.Remove(txId);
+            }
+        }
+
+        //Server-Server
         //Metodo chamado quando um servidor faz commit num grupo de objectos seus no contexto de uma tx
-        //para actualizar as replicas no servidor seguinte
-        public void UpdateReplicas(List<PadIntInsider> replicasToSend)
+        //para actualizar as replicas no servidor seguinte (ou pelo canCommit)
+        public void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend)
         {
             //Tem de actualizar as replicas
             lock (txLock)
             {
                 foreach(PadIntInsider replica in replicasToSend){
                     replicatedPadInts[replica.UID] = replica;
+
+                    //Creates the lock for this replica
+                    replicasLock.EnterWriteLock();
+                    try
+                    {
+                        if (!replicaLocks.ContainsKey(replica.UID))
+                            replicaLocks[replica.UID] = new Object();
+                    }
+                    finally
+                    {
+                        replicasLock.ExitWriteLock();
+                    }
+                    
+                }
+                if (txObjListToSend != null) //Se for null veio de um redistribution after crash
+                {
+                    KeyValuePair<int, List<int>> kvp = txObjListToSend.FirstOrDefault();
+                    if (kvp.Value != null)
+                        txReplicatedObjList[kvp.Key] = kvp.Value; //can Commit
+                    else
+                        txReplicatedObjList.Remove(kvp.Key); //Commit
                 }
             }
         }
@@ -1294,12 +1505,16 @@ namespace Server {
                         receivedReplicas = serv.GiveMeYourReplicas();
                     }
                     catch (Exception e) { Console.WriteLine(e); }
-                    UpdateReplicas(receivedReplicas);
+                    UpdateReplicas(receivedReplicas, null);
                 }
                 //Enviar as minhas replicas para o meu next
                 SendNewReplicas(MakeReplicas());
             }
             //Se nao fui afectado pela saida nao faco mais nada
+            lock (txLock)
+            {
+                midRecovery = false;
+            }
         }
 
         //Internal method - ALREADY LOCK PROTECTED!
@@ -1326,6 +1541,10 @@ namespace Server {
             //se eu fui o primeiro a descobrir a falha. Se eu nao fui o primeiro nao faço mais nada,
             //porque ja esta alguem a tratar disso. Se for eu o primeiro a detectar, tenho d avisar os
             //restantes para que eles possam retirar este servidor das suas listas.
+
+            lock(txLock){
+                midRecovery = true;
+            }
 
             //Contacta o master para avisar do crash detectado
             IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
@@ -1388,7 +1607,7 @@ namespace Server {
 
         //Internal Method
         //Sends a list of replicas to the next server, who will update the ones received
-        private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend)
+        private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend)
         {
             int myBeginInterval;
             string nextServerAddrPort;
@@ -1406,7 +1625,7 @@ namespace Server {
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + nextServerAddrPort + "/Server");
-                    serv.UpdateReplicas(replicasToSend);
+                    serv.UpdateReplicas(replicasToSend, txObjListToSend);
                 }
             }
             catch (Exception e) { Console.WriteLine(e); }

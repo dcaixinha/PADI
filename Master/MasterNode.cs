@@ -31,7 +31,7 @@ namespace Master {
 
         private Queue<string> roundRobin = new Queue<string>();
         private int txIdCounter = 0;
-        private List<string> crashedServers = new List<string>();
+        private Dictionary<string, string> crashedServers = new Dictionary<string, string>(); //crashed addrPort, nextToCrashed (for commits/aborts)
 
         private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >
 
@@ -74,22 +74,33 @@ namespace Master {
             }
         }
 
+        public string GetNextToCrashed(string crashedServerAddrPort)
+        {
+            lock (serversLock)
+            {
+                if(crashedServers.ContainsKey(crashedServerAddrPort))
+                    return crashedServers[crashedServerAddrPort];
+                else return null;
+            }
+        }
+
         //Returns true if this is the first time this server crash was detected
         public Boolean DetectedCrash(string crashedServerAddrPort)
         {
             Boolean alreadyDetectedCrash;
             lock (serversLock)
             {
-                alreadyDetectedCrash = crashedServers.Contains(crashedServerAddrPort);
+                alreadyDetectedCrash = crashedServers.ContainsKey(crashedServerAddrPort);
             }
             if (alreadyDetectedCrash)
                 return false;
             else //Eh preciso remover este servidor
             {
+                string serverNextToFailed = DstmUtil.GetNextServer(crashedServerAddrPort, servers);
                 Boolean hasServerInfo = false;
                 lock (serversLock)
                 {
-                    crashedServers.Add(crashedServerAddrPort);
+                    crashedServers.Add(crashedServerAddrPort, serverNextToFailed);
                     hasServerInfo = DstmUtil.ServerInfoContains(servers, crashedServerAddrPort);
                 }
                 if (hasServerInfo)
