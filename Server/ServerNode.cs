@@ -1350,6 +1350,12 @@ namespace Server {
                 }
             }
 
+            //If there are padints to be removed (and thus we need to propagate this information to the replicas,
+            //we fill the createdObjListToSend with the replicas that need to be destroyed. The decidion to destroy
+            //the replica is done by checking if the uid in the craetedObj is not on the objList, if its not then it
+            //is meant to be destroyed)
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
+            txCreatedObjListToSend[txId] = new List<int>();
             lock (txLock)
             {
                 //Limpa a lista dos objectos que ele tem nesta tx
@@ -1359,16 +1365,18 @@ namespace Server {
                 {
                     List<int> createdUids = txCreatedObjList[txId];
                     foreach (int uid in createdUids)
+                    {
                         myPadInts.Remove(uid);
+                        txCreatedObjListToSend[txId].Add(uid);
+                    }
                 }
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
             //Limpar as replicas para esta tx (no seu next)
             SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
-            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
             txObjListToSend.Add(txId, null);
-            txCreatedObjListToSend.Add(txId, null);
+            //txCreatedObjListToSend.Add(txId, null);
             //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
             SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
         }
@@ -1536,13 +1544,31 @@ namespace Server {
                     if (kvp.Value != null)
                         txReplicatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
                     else
-                        txReplicatedObjList.Remove(kvp.Key); //Commit
+                        txReplicatedObjList.Remove(kvp.Key); //Commit ou abort
                 }
                 if (txCreatedObjListToSend != null)
                 {
                     KeyValuePair<int, List<int>> kvp = txCreatedObjListToSend.FirstOrDefault();
                     if (kvp.Value != null)
-                        txReplicatedCreatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
+                    {
+                        if (txObjListToSend != null)
+                            txReplicatedCreatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
+                        List<int> uidsToEliminate = new List<int>();
+                        foreach(int uid in kvp.Value) //Abort: check which replicas need to be destroyed
+                        {                               //because their padint original was destroyed
+                            //Se o txReplicatedObjList nao contem o elemento, eh pq eh para remover esse elemento
+                            if (!txReplicatedObjList.ContainsKey(kvp.Key) || !txReplicatedObjList[kvp.Key].Contains(uid))
+                                uidsToEliminate.Add(uid);
+                        }
+                        foreach (int uid in uidsToEliminate)
+                        {
+                            replicatedPadInts.Remove(uid);
+                            txReplicatedCreatedObjList[kvp.Key].Remove(uid);
+                        }
+                        //Se a lista ficou vazia, remover a entrada desta tx...
+                        if (txReplicatedCreatedObjList[kvp.Key].Count == 0)
+                            txReplicatedCreatedObjList.Remove(kvp.Key);
+                    }
                     else
                         txReplicatedCreatedObjList.Remove(kvp.Key); //Commit
                 }
