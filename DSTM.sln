@@ -28,6 +28,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailWithTwo", "T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailWithThree", "TestsServerFailWithThree\TestsServerFailWithThree.csproj", "{DCCCF63F-CF7D-4EC4-8B37-569DA3731F71}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailCoordinatorCommit", "TestsServerFailCoordinator\TestsServerFailCoordinatorCommit.csproj", "{76EEE902-ACA3-42BD-9CF3-1B49CC1E6964}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailCoordinatorAbort", "TestsFailCoordinatorAbort\TestsServerFailCoordinatorAbort.csproj", "{11C35A74-E136-4694-8369-0208391B9CB0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,6 +90,14 @@ Global
 		{DCCCF63F-CF7D-4EC4-8B37-569DA3731F71}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DCCCF63F-CF7D-4EC4-8B37-569DA3731F71}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DCCCF63F-CF7D-4EC4-8B37-569DA3731F71}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76EEE902-ACA3-42BD-9CF3-1B49CC1E6964}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76EEE902-ACA3-42BD-9CF3-1B49CC1E6964}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76EEE902-ACA3-42BD-9CF3-1B49CC1E6964}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76EEE902-ACA3-42BD-9CF3-1B49CC1E6964}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11C35A74-E136-4694-8369-0208391B9CB0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11C35A74-E136-4694-8369-0208391B9CB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11C35A74-E136-4694-8369-0208391B9CB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11C35A74-E136-4694-8369-0208391B9CB0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

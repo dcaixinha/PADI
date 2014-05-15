@@ -87,7 +87,6 @@ namespace Server {
             return null;
         }
 
-        private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
         private SortedDictionary<int, ServerInfo> servers; // ex: < begin, object ServerInfo(begin, end, portAddress) >
         
         private SortedDictionary<int, PadIntInsider> myPadInts = new SortedDictionary<int, PadIntInsider>(); //uid, padint
@@ -95,10 +94,22 @@ namespace Server {
         private ServerInfo mySInfo = new ServerInfo(0,0,"");//Guarda o meu intervalo (begin, end, portAdress) 
                                                             //Ter acesso directo a esta estrutura permite rapida
                                                             //verificacao se eh preciso ou nao redistribuir certo padint
+
+        private SortedDictionary<string, int> clients = new SortedDictionary<string, int>(); // ex: < "193.34.126.54:6000", (txId) >
+
+        private SortedDictionary<string, int> replicatedClients = new SortedDictionary<string, int>();
+
         // Lista mantida pelo coordenador
         // Esta lista serve para no fim, o coordenador saber quem tem que contactar para o commit
         // <txId, lista< uid > >
         private SortedDictionary<int, List<int>> txObjCoordList = new SortedDictionary<int, List<int>>();
+
+        // Lista mantida pelo next de cada coordenador
+        // Esta lista serve para no fim, se o coordenador falhar, o master, ou quem detectou a falha
+        // saber quem tem que contactar para o commit (ou abort) das tx que o servidor que falhou coordenava.
+        // Sao acrecentados elementos a esta lista quando eh feito um create ou access no coordenador
+        // <txId, lista< uid > >
+        private SortedDictionary<int, List<int>> txObjReplicatedCoordList = new SortedDictionary<int, List<int>>();
 
         // Lista mantida pelos responsaveis por objectos envolvidos em txs
         // <txId, lista< uid > >
@@ -111,6 +122,8 @@ namespace Server {
         // Eh preciso manter uma lista nos responsaveis, dos objectos criados na tx actual, para em caso de abort,
         // o objecto ser removido <txId, lista<uid>>
         private SortedDictionary<int, List<int>> txCreatedObjList = new SortedDictionary<int, List<int>>();
+
+        private SortedDictionary<int, List<int>> txReplicatedCreatedObjList = new SortedDictionary<int, List<int>>();
 
         private string myself;
         private Boolean midRecovery = false;
@@ -253,6 +266,13 @@ namespace Server {
                 SetReplicas(receivedReplicas);
                 //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
                 SendNewReplicas(MakeReplicas());
+                //Envio a minha info de coordenador ao meu next (que neste caso, como acabei de entrar vao as tabelas
+                //vazias vao apenas ter o efeito de limpar as tabelas do meu seguinte da info antiga que conteriam)
+                SendCoordInfoToNext();
+
+                //Enviar para o seu next info sobre os seus tx-obj para que possam ser replicados
+                //&&&&&&&&&&&&&&&&&&&
+                SendTxObjInfoToNext();
             }
             lock (txLock)
             {
@@ -261,7 +281,7 @@ namespace Server {
         }
 
         //Server-Server
-        //Other servers call this to change topology after node join or leave
+        //Other servers call this to change topology after node join
         public void UpdateNetwork(string serverAddrPort)
         {
             threadSafeStateCheck();
@@ -325,9 +345,11 @@ namespace Server {
 
         //Server-Server
         //O servidor que entrou chama este metodo no servidor que podera ter objectos do novo.
-        //Este metodo so eh chamado quando o que entrou tem ja recebeu return de todos, i.e.
+        //Este metodo so eh chamado quando o que entrou ja recebeu return de todos, i.e.
         //tal como num 2-phase, so vou pedir os objectos quando ja todos souberem que eu sou
         //o novo responsavel pelo range desses objectos.
+        //Alem dos objectos, o anterior tambem envia ao novo as suas listas de txObjCoord e a
+        //lista de clientes.
         public ServerPackage GiveMeMyObjects()
         {
             //Se tenho objectos para redistribuir, removo-os das minhas listas e envio-os
@@ -390,11 +412,16 @@ namespace Server {
                     //removo da minha lista de padints
                     foreach(PadIntInsider padint in myPadInts.Values)
                     {
-                        replicas.Add(DstmUtil.GetPadintReplicaFrom(padint));
+                        replicas.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                     }
                 }
 
                 ServerPackage pack = new ServerPackage(padintToSendList, objTxToSendDict, objCreatedTxToSendDict, replicas);
+                //Envio replicas da minha informacao de coordenador ao seguinte
+                SendCoordInfoToNext();
+                //Enviar po meu next info sobre os meus txObj restantes para que ele possa replicar
+                //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+                SendTxObjInfoToNext();
                 //Reset the send lists
                 objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
@@ -417,10 +444,20 @@ namespace Server {
         }
 
         //Server-Server
-        //Method called by the server who aglomerates on its new previous server.
-        public List<PadIntInsider> GiveMeYourReplicas()
+        //Method called by the server who aglomerates on its new previous server. Besides the padint replicas
+        //this server will also send its tx-obj and tx-created obj lists to be replicated
+        public ReplicaPackage GiveMeYourReplicas()
         {
-            return MakeReplicas();
+            SortedDictionary<int, List<int>> txObjListReplica;
+            SortedDictionary<int, List<int>> txCreatedObjListReplica;
+            lock (txLock)
+            {
+                txObjListReplica = DstmUtil.GetTxObjReplicaFrom(txObjList);
+                txCreatedObjListReplica = DstmUtil.GetTxObjReplicaFrom(txCreatedObjList);
+            }
+            List<PadIntInsider> padintReplicas = MakeReplicas();
+            ReplicaPackage pack = new ReplicaPackage(padintReplicas, txObjListReplica, txCreatedObjListReplica);
+            return pack;
         }
 
         //Client-Server
@@ -446,6 +483,8 @@ namespace Server {
                 lock(serverLock){
                     clients.Add(clientAddressPort, txId);//update tx ID for this client
                 }
+                //Envia para o seu next uma replica da lista de tx-obj que coordena E a tabela dos seus clientes
+                SendCoordInfoToNext();
                 //DstmUtil.ShowClientsList(clients);
                 return true;
             }
@@ -463,7 +502,6 @@ namespace Server {
             {
                 //verifica se o client tem 1 tx aberta
                 if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
-                //TODO: aqui deve ser possivel criar este padint fora duma tx em q eh committed automaticamente
                 txId = clients[clientAddressPort];
 
                 //verifica quem eh o servidor responsavel (o hash eh feito la dentro do metodo)
@@ -483,9 +521,11 @@ namespace Server {
                 //Server failure detection
                 catch (System.Runtime.Remoting.RemotingException) 
                 { 
-                    StartRecoveryChain(responsible); 
-                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
-                    throw new TxException("The server responsible for this range was down!");
+                    StartRecoveryChain(responsible);
+                    //Esperar ate ter a tabela em ordem e repetir a operacao
+                    WaitWhileInRecoveryProcess();
+                    IServerServer serv = GetResponsibleServerAfterRecovery(uid);
+                    serv.CreatePadInt(uid, txId);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -504,6 +544,8 @@ namespace Server {
                     txObjCoordList.Add(txId, new List<int>());
                 txObjCoordList[txId].Add(uid);
             }
+            //Envia para o seu next uma replica da lista de tx-obj que coordena E a tabela dos seus clientes
+            SendCoordInfoToNext();
             //DstmUtil.ShowTxServersList(txServersList);
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
@@ -543,8 +585,10 @@ namespace Server {
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
-                    throw new TxException("The server responsible for this range was down!");
+                    //Esperar ate ter a tabela em ordem e repetir a operacao
+                    WaitWhileInRecoveryProcess();
+                    IServerServer serv = GetResponsibleServerAfterRecovery(uid);
+                    serv.AccessPadInt(uid, txId);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -564,6 +608,8 @@ namespace Server {
                     txObjCoordList.Add(txId, new List<int>());
                 txObjCoordList[txId].Add(uid);
             }
+            //Envia para o seu next uma replica da lista de tx-obj que coordena
+            SendCoordInfoToNext();
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
             return proxy;
@@ -604,8 +650,10 @@ namespace Server {
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
-                    throw new TxException("The server responsible for this range was down!");
+                    //Esperar ate ter a tabela em ordem e repetir a operacao
+                    WaitWhileInRecoveryProcess();
+                    IServerServer serv = GetResponsibleServerAfterRecovery(uid);
+                    value = serv.Read(uid, txId);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -648,8 +696,10 @@ namespace Server {
                 catch (System.Runtime.Remoting.RemotingException)
                 {
                     StartRecoveryChain(responsible);
-                    //Enviar algo para tras, para o client que indique que a tx tem de abortar...
-                    throw new TxException("The server responsible for this range was down!");
+                    //Esperar ate ter a tabela em ordem e repetir a operacao
+                    WaitWhileInRecoveryProcess();
+                    IServerServer serv = GetResponsibleServerAfterRecovery(uid);
+                    serv.Write(uid, txId, value);
                 }
                 catch (Exception e) { Console.WriteLine(e); }
             }
@@ -711,21 +761,8 @@ namespace Server {
                 }
             }
             //Antes de avancar tenho de ter a certeza de que nao estou a meio de um processo de recuperacao
-            //depois de uma falha, para garantir que tenho as tabelas actualizadas
-            Boolean isInRecovery;
-            lock (txLock)
-            {
-                isInRecovery = midRecovery;
-            }
-            while (isInRecovery)
-            {
-                lock (txLock)
-                {
-                    isInRecovery = midRecovery;
-                }
-                if (isInRecovery)
-                    System.Threading.Thread.Sleep(250);
-            }
+            //depois de uma falha (que pode ter sido iniciado no canCommit), para garantir que tenho as tabelas actualizadas
+            WaitWhileInRecoveryProcess();
 
             //Se todos responderam ao canCommit: Envio dos commits a todos
             if (numWaitingResponse == 0)
@@ -807,6 +844,8 @@ namespace Server {
                 string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
                 clients.Remove(clientAddrPort);
             }
+            //Envia para o seu next uma replica da lista de tx-obj e clients list que coordena
+            SendCoordInfoToNext();
             return result;
             
         }
@@ -861,6 +900,8 @@ namespace Server {
                 string clientAddrPort = clients.Where(item => item.Value == txId).First().Key;
                 clients.Remove(clientAddrPort);
             }
+            //Envia para o seu next uma replica da lista de tx-obj que coordena
+            SendCoordInfoToNext();
             return true;
         }
 
@@ -978,6 +1019,23 @@ namespace Server {
                 if (isWaiting)
                     System.Threading.Thread.Sleep(250);
             }
+
+            //Obtem a entrada da txObjList e txCreatedObjList referente a esta tx para enviar para a replica
+            List<int> uids;
+            List<int> createdUids = null;
+            lock(txLock){
+                uids = txObjList[txId];
+                if (txCreatedObjList.ContainsKey(txId))
+                    createdUids = txCreatedObjList[txId];
+            }
+            SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
+            txObjListToSend.Add(txId, uids);
+            txCreatedObjListToSend.Add(txId, createdUids);
+
+            //Vai preencher a lista de padints envolvidos nesta tx para enviar para a replica
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
+
             bool hasPadInt;
             //search for the padint
             PadIntInsider padint;
@@ -1007,6 +1065,13 @@ namespace Server {
                     if (result == -4)
                         System.Threading.Thread.Sleep(250);
                 }
+                lock (padintLock)
+                {
+                    //cria a unica replica que vai enviar
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
+                }
+                //Envia a lista de replicas (com este padint apenas) para o servidor seguinte
+                SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend); //TODO ver este null eh createdObj la em cima $$$$$$
                 return result;
             }
             else
@@ -1034,6 +1099,23 @@ namespace Server {
                     System.Threading.Thread.Sleep(250);
             }
 
+            //Obtem a entrada da txObjList e txCreatedObjList referente a esta tx para enviar para a replica
+            List<int> uids;
+            List<int> createdUids = null;
+            lock (txLock)
+            {
+                uids = txObjList[txId];
+                if (txCreatedObjList.ContainsKey(txId))
+                    createdUids = txCreatedObjList[txId];
+            }
+            SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
+            txObjListToSend.Add(txId, uids);
+            txCreatedObjListToSend.Add(txId, createdUids);
+
+            //Vai preencher a lista de padints envolvidos nesta tx para enviar para a replica
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
+
             PadIntInsider padint;
             bool hasPadInt;
             Object padintLock;
@@ -1056,7 +1138,11 @@ namespace Server {
                 lock (padintLock)
                 {
                     padint.Write(txId, value);
+                    //cria a unica replica que vai enviar
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                 }
+                //Envia a lista de replicas (com este padint apenas) para o servidor seguinte
+                SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
             }
             else
                 throw new TxException("PadInt not present in the responsible server!");
@@ -1085,14 +1171,19 @@ namespace Server {
             }
 
             List<int> uids;
+            List<int> createdUids = new List<int>();
             lock (txLock)
             {
                 //get the objects used in this txId
                 uids = txObjList[txId];
+                if (txCreatedObjList.ContainsKey(txId))
+                    createdUids = txCreatedObjList[txId];
             }
             //Obtem a entrada da txObjList referente a esta tx para enviar para a replica
             SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
             txObjListToSend.Add(txId, uids);
+            txCreatedObjListToSend.Add(txId, createdUids);
             //Vai preencher a lista de padints envolvidos nesta tx para enviar para a replica
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             //for each of these objects:
@@ -1116,11 +1207,11 @@ namespace Server {
                 lock (padintLock)
                 {
                     padint.CanCommit(txId);
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                 }
-                replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
             }
             //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
-            SendUpdatedReplicas(replicasToSend, txObjListToSend);
+            SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
             return true;
         }
 
@@ -1184,8 +1275,11 @@ namespace Server {
                     if (result == -4)
                         System.Threading.Thread.Sleep(250);
                 }
-                //criar uma replica deste padint e adicionar ah lista que mais tarde sera enviada
-                replicasToSend.Add(DstmUtil.GetPadintReplicaFrom(padint));
+                lock (padintLock)
+                {
+                    //criar uma replica deste padint e adicionar ah lista que mais tarde sera enviada
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
+                }
             }
             lock (txLock)
             {
@@ -1194,10 +1288,13 @@ namespace Server {
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
+            //Limpar as replicas para esta tx (no seu next)
             SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
             txObjListToSend.Add(txId, null);
+            txCreatedObjListToSend.Add(txId, null);
             //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
-            SendUpdatedReplicas(replicasToSend, txObjListToSend);
+            SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
         }
 
         //Server-Server
@@ -1226,6 +1323,8 @@ namespace Server {
                 uids = txObjList[txId];
             }
             Object padintLock;
+            //Make replicas of the objects used in this Tx
+            List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             foreach (int uid in uids)
             {
                 //for each of these objects:
@@ -1246,6 +1345,8 @@ namespace Server {
                 lock (padintLock)
                 {
                     padint.Abort(txId);
+                    //criar uma replica deste padint e adicionar ah lista que mais tarde sera enviada
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                 }
             }
 
@@ -1263,6 +1364,13 @@ namespace Server {
                 //Limpa a lista dos objectos que ele criou para esta tx
                 txCreatedObjList.Remove(txId);
             }
+            //Limpar as replicas para esta tx (no seu next)
+            SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
+            SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
+            txObjListToSend.Add(txId, null);
+            txCreatedObjListToSend.Add(txId, null);
+            //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
+            SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
         }
 
         //Server-Server
@@ -1328,6 +1436,8 @@ namespace Server {
             {
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txReplicatedObjList.Remove(txId);
+                //Limpa a lista dos objectos que ele criou para esta tx
+                txReplicatedCreatedObjList.Remove(txId);
             }
         }
 
@@ -1384,13 +1494,22 @@ namespace Server {
             {
                 //Limpa a lista dos objectos que ele tem nesta tx
                 txReplicatedObjList.Remove(txId);
+                //Para cada objecto que criou (se criou algum!) no contexto desta tx, remove-o
+                if (txReplicatedCreatedObjList.ContainsKey(txId))
+                {
+                    List<int> createdUids = txReplicatedCreatedObjList[txId];
+                    foreach (int uid in createdUids)
+                        replicatedPadInts.Remove(uid);
+                }
+                //Limpa a lista dos objectos que ele criou para esta tx
+                txReplicatedCreatedObjList.Remove(txId);
             }
         }
 
         //Server-Server
         //Metodo chamado quando um servidor faz commit num grupo de objectos seus no contexto de uma tx
         //para actualizar as replicas no servidor seguinte (ou pelo canCommit)
-        public void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend)
+        public void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend, SortedDictionary<int, List<int>> txCreatedObjListToSend)
         {
             //Tem de actualizar as replicas
             lock (txLock)
@@ -1415,9 +1534,17 @@ namespace Server {
                 {
                     KeyValuePair<int, List<int>> kvp = txObjListToSend.FirstOrDefault();
                     if (kvp.Value != null)
-                        txReplicatedObjList[kvp.Key] = kvp.Value; //can Commit
+                        txReplicatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
                     else
                         txReplicatedObjList.Remove(kvp.Key); //Commit
+                }
+                if (txCreatedObjListToSend != null)
+                {
+                    KeyValuePair<int, List<int>> kvp = txCreatedObjListToSend.FirstOrDefault();
+                    if (kvp.Value != null)
+                        txReplicatedCreatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
+                    else
+                        txReplicatedCreatedObjList.Remove(kvp.Key); //Commit
                 }
             }
         }
@@ -1445,6 +1572,8 @@ namespace Server {
         }
 
         //Server-Server
+        //Server-Master
+        //Se o cliente for o primeiro a detectar que o seu coordenador caiu, o master eh quem avisa todos os servidores
         public void UpdateNetworkAfterCrash(string crashedServerAddrPort){
             SInfoPackage pack;
             ServerInfo newMySInfo;
@@ -1460,6 +1589,7 @@ namespace Server {
             //Verificar se eu fui afectado pela saida. Se fui afectado tenho que passar as minhas replicas
             //para padints, e tenho de contactar o meu novo previous para obter as replicas dele. E finalmente
             //tenho de enviar as minhas replicas para o meu next.
+            //Tambem passo a tabela de coordenador do meu antecessor (replica) para efectiva minha assim como os clientes...
             //Console.WriteLine("new guy: '" + newServerResponsible + "' myself: '" + myself + "' #######################");
             if (newServerResponsible.Equals(myself))
             {
@@ -1490,22 +1620,47 @@ namespace Server {
                         padintsLock.ExitWriteLock();
                     }
                 }
+                //Passar o tx-obj e tx-createdObj que tava a replicar para efectivo ################################################################
+                lock(txLock){
+                    foreach(KeyValuePair<int, List<int>> kvp in txReplicatedObjList){
+                        if (txObjList.ContainsKey(kvp.Key)){ //Se ja tem objectos nesta txId, acrescenta os novos 1 a 1
+                            foreach (int uid in kvp.Value)
+                                txObjList[kvp.Key].Add(uid);
+                        }
+                        else
+                            txObjList.Add(kvp.Key, kvp.Value);
+                    }
+                    txReplicatedObjList.Clear();
+                    foreach (KeyValuePair<int, List<int>> kvp in txReplicatedCreatedObjList)
+                    {
+                        if (txCreatedObjList.ContainsKey(kvp.Key))
+                        { //Se ja tem objectos nesta txId, acrescenta os novos 1 a 1
+                            foreach (int uid in kvp.Value)
+                                txCreatedObjList[kvp.Key].Add(uid);
+                        }
+                        else
+                            txCreatedObjList.Add(kvp.Key, kvp.Value);
+                    }
+                    txReplicatedCreatedObjList.Clear();
+                }
+                //Passar a tabela de coordenador do meu antecessor (replica) e adicionar ah minha e adicionar aos meus clientes os do antigo
+                BecomeCoordinatorIfPreviousWas();
                 //Contactar o meu novo previous para obter as replicas dele
                 string previousServer = null;
                 lock(serverLock){
                     previousServer = DstmUtil.GetPreviousServer(myBeginInterval, servers);
                 }
-                List<PadIntInsider> receivedReplicas = null;
+                ReplicaPackage replicaPack = null;
                 if (previousServer != null)
                 {
                     try
                     {
                         IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                             "tcp://" + previousServer + "/Server");
-                        receivedReplicas = serv.GiveMeYourReplicas();
+                        replicaPack = serv.GiveMeYourReplicas();
                     }
                     catch (Exception e) { Console.WriteLine(e); }
-                    UpdateReplicas(receivedReplicas, null);
+                    UpdateReplicas(replicaPack.GetReplicas(), replicaPack.GetTxObj(), replicaPack.GetTxCreatedObj());
                 }
                 //Enviar as minhas replicas para o meu next
                 SendNewReplicas(MakeReplicas());
@@ -1517,8 +1672,33 @@ namespace Server {
             }
         }
 
+        //Server-Server
+        //This method is called everytime a previous server (which is a coordinator) is asked to create or access
+        //any padint
+        public void SetCoordReplicationInfo(SortedDictionary<int, List<int>> txObjCoordListReceived, SortedDictionary<string, int> clientsReceived)
+        {
+            lock (txLock)
+            {
+                txObjReplicatedCoordList = txObjCoordListReceived;
+            }
+            lock (serverLock)
+            {
+                replicatedClients = clientsReceived;
+            }
+        }
+
+        //Server-Server
+        public void SetTxObjReplicationInfo(SortedDictionary<int, List<int>> txObjListReceived, SortedDictionary<int, List<int>> txCreatedObjListReceived)
+        {
+            lock (txLock)
+            {
+                txReplicatedObjList = txObjListReceived;
+                txReplicatedCreatedObjList = txCreatedObjListReceived;
+            }
+        }
+
         //Internal method - ALREADY LOCK PROTECTED!
-        //Makes replicas from myPadInts (only if those padints have a committed write version)
+        //Makes replicas from myPadInts
         private List<PadIntInsider> MakeReplicas()
         {
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
@@ -1526,14 +1706,13 @@ namespace Server {
             {
                 foreach (PadIntInsider padint in myPadInts.Values)
                 {
-                    if (!padint.COMMITWRITE.Equals(Tuple.Create(0, 0))) //so copia se ja tiver uma versao committed
-                        replicasToSend.Add(DstmUtil.GetPadintReplicaFrom(padint));
+                    replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                 }
             }
             return replicasToSend;
         }
 
-        //Internal method
+        //Internal method - LOCK PROTECTED
         //Receives the addrPort of the failed server and starts the chain to remove this server from the network
         private void StartRecoveryChain(string crashedServerAddrPort)
         {
@@ -1579,7 +1758,7 @@ namespace Server {
             //Se nao fui o primeiro a detectar, nao preciso de fazer mais nada (o primeiro vai contactar-me)
         }
 
-        //Internal method
+        //Internal method - LOCK PROTECTED
         //Sends a list of replicas to the next, which will reset its replica list and set this list as the new list.
         private void SendNewReplicas(List<PadIntInsider> replicasToSend)
         {
@@ -1605,9 +1784,9 @@ namespace Server {
             catch (Exception e) { Console.WriteLine(e); }
         }
 
-        //Internal Method
+        //Internal Method - LOCK PROTECTED
         //Sends a list of replicas to the next server, who will update the ones received
-        private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend)
+        private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend, SortedDictionary<int, List<int>> txCreatedObjListToSend)
         {
             int myBeginInterval;
             string nextServerAddrPort;
@@ -1625,10 +1804,128 @@ namespace Server {
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + nextServerAddrPort + "/Server");
-                    serv.UpdateReplicas(replicasToSend, txObjListToSend);
+                    serv.UpdateReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
                 }
             }
             catch (Exception e) { Console.WriteLine(e); }
+        }
+
+        //Internal method - LOCK PROTECTED
+        //Sends a replica of its coordinator lists to its next server
+        private void SendCoordInfoToNext()
+        {
+            string nextServer;
+            lock (serverLock)
+            {
+                nextServer = DstmUtil.GetNextServer(myself, servers);
+            }
+            if (nextServer != null)
+            {
+                //Console.WriteLine("############ Next is: " + nextServer);
+                SortedDictionary<int, List<int>> txObjCoordListToSend;
+                lock (txLock)
+                {
+                    txObjCoordListToSend = DstmUtil.GetCoordListReplicaFrom(txObjCoordList);
+                }
+                //Replicar e enviar a lista dos clients...
+                SortedDictionary<string, int> clientsToSend;
+                lock (serverLock)
+                {
+                    clientsToSend = DstmUtil.GetClientListReplicaFrom(clients);
+                }
+                IServerServer srv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + nextServer + "/Server");
+                srv.SetCoordReplicationInfo(txObjCoordListToSend, clientsToSend);
+            }
+        }
+
+        //Internal method - LOCK PROTECTED
+        //Sends a replica of its tx-obj info to its next server
+        private void SendTxObjInfoToNext()
+        {
+            string nextServer;
+            lock (serverLock)
+            {
+                nextServer = DstmUtil.GetNextServer(myself, servers);
+            }
+            if (nextServer != null)
+            {
+                SortedDictionary<int, List<int>> txObjListToSend;
+                SortedDictionary<int, List<int>> txCreatedObjListToSend;
+                lock (txLock)
+                {
+                    txObjListToSend = DstmUtil.GetTxObjReplicaFrom(txObjList);
+                    txCreatedObjListToSend = DstmUtil.GetTxObjReplicaFrom(txCreatedObjList);
+                }
+                IServerServer srv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                            "tcp://" + nextServer + "/Server");
+                srv.SetTxObjReplicationInfo(txObjListToSend, txCreatedObjListToSend);
+            }
+        }
+
+        //Internal method -LOCK PROTECTED
+        //If the previous server, who crashed, was a coordinator, I now become the new coordinator
+        //for those txs and those clients. In the end I clear the replicated data structures after I
+        //pass those values to my effective tables.
+        private void BecomeCoordinatorIfPreviousWas()
+        {
+            lock (txLock)
+            {
+                foreach (int txId in txObjReplicatedCoordList.Keys)
+                {
+                    if (!txObjCoordList.ContainsKey(txId))
+                        txObjCoordList[txId] = new List<int>();
+                    foreach (int objectId in txObjReplicatedCoordList[txId])
+                        txObjCoordList[txId].Add(objectId);
+                }
+                txObjReplicatedCoordList.Clear();
+            }
+            lock (serverLock)
+            {
+                foreach (string clientAddrPort in replicatedClients.Keys)
+                {
+                    if (!clients.ContainsKey(clientAddrPort)) //O mesmo cliente so pode estar envolvido numa tx de cada vez
+                        clients[clientAddrPort] = replicatedClients[clientAddrPort];
+                }
+                replicatedClients.Clear();
+            }
+        }
+
+        //Internal method -  LOCK PROTECTED
+        //Depois de um servidor falhar, quando eu detecto que ele falhou vou ter a variavel 'midRecovery' a true
+        //esta variavel so sera posta a false outra vez quando eu terminar de correr o metodo de recuperacao
+        //invocado ou por mim (se eu fui o primeiro a detectar a falha) ou por algum outro servido (ou ate pelo master)
+        //Ha certas operacoes que eu nao quero fazer enquanto tiver as tabelas dos servidores inconsistentes, como
+        //repetir uma operacao no servidor que foi abaixo, por exemplo.
+        private void WaitWhileInRecoveryProcess(){
+            Boolean isInRecovery;
+            lock (txLock)
+            {
+                isInRecovery = midRecovery;
+            }
+            while (isInRecovery)
+            {
+                lock (txLock)
+                {
+                    isInRecovery = midRecovery;
+                }
+                if (isInRecovery)
+                    System.Threading.Thread.Sleep(100);
+            }
+        }
+
+        //Internal method
+        private IServerServer GetResponsibleServerAfterRecovery(int uid)
+        {
+            string responsible;
+            lock (serverLock)
+            {
+                //returns the portAddress of the server responsible for that uid
+                responsible = DstmUtil.GetResponsibleServer(servers, uid);
+            }
+            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
+                "tcp://" + responsible + "/Server");
+            return serv;
         }
 
         public bool Fail()
@@ -1651,6 +1948,7 @@ namespace Server {
                 lock (serverLock)
                 {
                     clients = new SortedDictionary<string, int>();
+                    replicatedClients = new SortedDictionary<string, int>();
                     servers = new SortedDictionary<int, ServerInfo>();
                 }
                 lock (txLock)
@@ -1659,8 +1957,11 @@ namespace Server {
                     myPadInts = new SortedDictionary<int, PadIntInsider>();
                     replicatedPadInts = new SortedDictionary<int, PadIntInsider>();
                     txObjCoordList = new SortedDictionary<int, List<int>>();
+                    txObjReplicatedCoordList = new SortedDictionary<int, List<int>>();
                     txObjList = new SortedDictionary<int, List<int>>();
+                    txReplicatedObjList = new SortedDictionary<int, List<int>>();
                     txCreatedObjList = new SortedDictionary<int, List<int>>();
+                    txReplicatedCreatedObjList = new SortedDictionary<int, List<int>>();
                 }
                 _queuedThreads.Clear();
                 return true;
@@ -1767,16 +2068,20 @@ namespace Server {
             lock (serverLock)
             {
                 DstmUtil.ShowServerList(servers);
-                DstmUtil.ShowClientsList(clients);
+                DstmUtil.ShowClientsList(clients, "Clients List (Coordinator)");
+                DstmUtil.ShowClientsList(replicatedClients, "Replicated clients List (previous coordinator)");
             }
             lock (txLock)
             {
-                DstmUtil.ShowTxServersList(txObjCoordList, servers);
+                DstmUtil.ShowTxServersList(txObjCoordList, servers, "Tx-Servers List (Coordinator)");
+                DstmUtil.ShowTxServersList(txObjReplicatedCoordList, servers, "Replicated tx-Servers List (previous coordinator)");
                 DstmUtil.ShowServerIntervals(mySInfo);
                 DstmUtil.ShowPadIntsList(myPadInts);
                 DstmUtil.ShowReplicas(replicatedPadInts);
-                DstmUtil.ShowTxObjectsList(txObjList);
-                DstmUtil.ShowTxCreatedObjectsList(txCreatedObjList);
+                DstmUtil.ShowTxObjectsList(txObjList, "Tx-Object List (Responsible)");
+                DstmUtil.ShowTxObjectsList(txReplicatedObjList, "Replicated tx-Object List");
+                DstmUtil.ShowTxCreatedObjectsList(txCreatedObjList, "Tx-Created Object List (Responsible)");
+                DstmUtil.ShowTxCreatedObjectsList(txReplicatedCreatedObjList, "Replicated tx-Created Object List");
             }
         }
 

@@ -70,7 +70,8 @@ namespace PADI_DSTM
                 if (dSelected == committedWrite.Item1)
                 {
                     //write a new tentative read
-                    tentativeReads.Add(txId);
+                    if (!tentativeReads.Contains(txId)) //permite varios reads sucessivos
+                        tentativeReads.Add(txId);
                     return committedWrite.Item2; //value
                 }
                 else if(dSelected == txId){ //se quer ler um valor q a propria tx escreveu, e ja so ha esse que eh menor ou igual
@@ -148,7 +149,7 @@ namespace PADI_DSTM
             if (txId >= getMaxReadTimestamp()){
                 if (txId > committedWrite.Item1)
                     //write a new tentative read
-                    tentativeWrites.Add(txId, value);
+                    tentativeWrites[txId] = value;
                 //else if(txId < committedWrite.Item1) { } //Ignore Obsolete Write Rule
             }
             else

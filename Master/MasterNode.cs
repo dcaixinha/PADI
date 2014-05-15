@@ -126,6 +126,32 @@ namespace Master {
             }
         }
 
+        //Quando o cliente detecta que o seu coordenador falhou pede ao master para lhe dar o endereço
+        //do novo coordenador. Mas antes o master vai dar ordem ao seguinte do que falhou para que este passe
+        //a tabela de coordenador que tinha como replica do que falhou para efectiva (para depois poder continuar
+        //a tx do cliente).
+        public string MyCoordinatorFailed(string clientAddrPort, string failedServerAddrPort)
+        {
+            Boolean iDetectedFirst = DetectedCrash(failedServerAddrPort);
+            string nextServer = GetNextToCrashed(failedServerAddrPort);
+            //Se eu fui o primeiro a detectar tenho de avisar todos os servidores (que sobreviveram) 
+            //que este servidor caiu
+            if (iDetectedFirst)
+            {
+                foreach (ServerInfo sInfo in servers.Values)
+                {
+                    string server = sInfo.getPortAddress();
+                    IServerMaster serv = (IServerMaster)Activator.GetObject(typeof(IServerMaster),
+                        "tcp://" + server + "/Server");
+                    serv.UpdateNetworkAfterCrash(failedServerAddrPort);
+                }
+            }
+            //TODO avisar o novo coord que tem 1 novo cliente
+
+            //Retornar o endereço do next ao cliente
+            return nextServer;
+        }
+
         //Client calls this to bootstrap himself and get a server
         public string BootstrapClient(string addrPort)
         {

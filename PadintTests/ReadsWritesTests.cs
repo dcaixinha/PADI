@@ -161,22 +161,44 @@ namespace TestsPadint
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
+            Console.WriteLine("Status...");
+            Console.WriteLine("Register another server and press any key to start a new tx...");
+            PadiDstm.Status();
+            Console.ReadLine();
+
             Console.WriteLine("TxBegin...");
             PadiDstm.TxBegin();
             try
             {
-                Console.WriteLine("Failing Server " + DstmUtil.LocalIPAddress() + ":4001" + "...");
+                Console.WriteLine("Failing the coordinator " + DstmUtil.LocalIPAddress() + ":4001" + "...");
                 bool res = PadiDstm.Fail("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");
                 if (!res)
                 {
                     Console.WriteLine("TEST FAILED!\r\n");
                     return;
                 }
+
+                Console.WriteLine("Give it a couple of seconds for the recovery, and press any key to continue...");
+                Console.ReadLine();
+
+                Console.WriteLine("Status, press any key to continue...");
+                PadiDstm.Status();
+                Console.ReadLine();
  
                 Console.WriteLine("AccessPadint " + uid + "...");
                 PadInt padint = PadiDstm.AccessPadInt(uid);
 
-                Console.WriteLine("TEST FAILED!\r\n");  // Se chegar aqui o teste falhou, devia ter gerado uma exception
+                Console.WriteLine("Status, press any key to continue...");
+                PadiDstm.Status();
+                Console.ReadLine();
+
+                Console.WriteLine("Reading value (should be " + value + ")...");
+                int obtained = padint.Read();
+                Console.WriteLine("Obtained: " + obtained);
+                if (obtained == value)
+                    Console.WriteLine("TEST PASSED!\r\n");  // Se chegar aqui o teste falhou, devia ter gerado uma exception
+                else
+                    Console.WriteLine("TEST FAILED!\r\n");
 
                 PadiDstm.CloseChannel();
                 Thread.Sleep(2000);
@@ -184,9 +206,9 @@ namespace TestsPadint
             catch (TxException)
             {
                 PadiDstm.CloseChannel();
-                PadiDstm.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");       // Repor o estado do servidor...
-                Console.WriteLine("Caught remoting exception!");
-                Console.WriteLine("TEST PASSED!\r\n");
+                //PadiDstm.Recover("tcp://" + DstmUtil.LocalIPAddress() + ":4001" + "/Server");       // Repor o estado do servidor...
+                Console.WriteLine("Caught TxException!");
+                Console.WriteLine("TEST FAILED!\r\n");
             }
 
         }

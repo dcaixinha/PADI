@@ -7,9 +7,9 @@ using System.Threading;
 
 using PADI_DSTM;
 
-namespace TestsServerFailWithThree
+namespace TestsFailCoordinatorAbort
 {
-    class FailTestsWithThree
+    class FailTestsCoord
     {
         public void testFail()
         {
@@ -24,67 +24,47 @@ namespace TestsServerFailWithThree
             Console.WriteLine("TxBegin...");
             PadiDstm.TxBegin();
 
+            int obtained;
             int uid1 = 1;
             int value1 = 41;
             int uid2 = 1000000000;
             int value2 = 42;
             int uid3 = 5;
             int value3 = 43;
-            int uid4 = 9;
-            int value4 = 53;
-            int value5 = 63;
 
-            int faillingServerPort = 2003;
+            int faillingServerPort = 2001;
 
-            PadInt padint = new PadInt(null, null, -1);
+            PadInt padint1 = new PadInt(null, null, -1);
+            PadInt padint2 = new PadInt(null, null, -1);
+            PadInt padint3 = new PadInt(null, null, -1);
 
             try
             {
                 Console.WriteLine("CreatePadint " + uid1 + "...");
-                padint = PadiDstm.CreatePadInt(uid1);
+                padint1 = PadiDstm.CreatePadInt(uid1);
 
                 Console.WriteLine("Writing value " + value1 + "...");
-                padint.Write(value1);
-
-                Console.WriteLine("Committing...");
-                PadiDstm.TxCommit();
-
-                Console.WriteLine("TxBegin...");
-                PadiDstm.TxBegin();
+                padint1.Write(value1);
 
                 Console.WriteLine("CreatePadint " + uid2 + "...");
-                padint = PadiDstm.CreatePadInt(uid2);
+                padint2 = PadiDstm.CreatePadInt(uid2);
 
                 Console.WriteLine("Writing value " + value2 + "...");
-                padint.Write(value2);
-
-                Console.WriteLine("Committing...");
-                PadiDstm.TxCommit();
-
-                Console.WriteLine("TxBegin...");
-                PadiDstm.TxBegin();
+                padint2.Write(value2);
 
                 Console.WriteLine("CreatePadint " + uid3 + "...");
-                padint = PadiDstm.CreatePadInt(uid3);
+                padint3 = PadiDstm.CreatePadInt(uid3);
 
                 Console.WriteLine("Writing value " + value3 + "...");
-                padint.Write(value3);
+                padint3.Write(value3);
 
-                Console.WriteLine("Committing...");
-                PadiDstm.TxCommit();
+                Console.WriteLine("Reading value (should be " + value1 + ")...");
+                obtained = padint1.Read();
+                Console.WriteLine("Obtained: " + obtained);
 
-                Console.WriteLine("TxBegin...");
-                PadiDstm.TxBegin();
-
-                Console.WriteLine("CreatePadint " + uid4 + "...");
-                padint = PadiDstm.CreatePadInt(uid4);
-
-                Console.WriteLine("Writing value " + value4 + "...");
-                padint.Write(value4);
-
-                Console.WriteLine("Status, 3 padints committed and a 4th on server 3 not committed");
+                Console.WriteLine("Status, 3 padints not committed");
                 Console.WriteLine("Now observe the replicas... ");
-                Console.WriteLine("Press any key to fail server " + faillingServerPort + "...");
+                Console.WriteLine("Press any key to fail the coordinator " + faillingServerPort + "...");
                 PadiDstm.Status();
                 Console.ReadLine();
 
@@ -97,40 +77,29 @@ namespace TestsServerFailWithThree
                 }
 
                 Console.WriteLine("Status, server " + faillingServerPort + " failed but the others haven't noticed yet");
-                Console.WriteLine("Press any key to continue the test...");
+                Console.WriteLine("Press any key to to try reading a value from the first padint...");
                 PadiDstm.Status();
                 Console.ReadLine();
 
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
 
-            int obtained;
             try
             {
-                Console.WriteLine("Reading value (should be " + value4 + ")...");
-                obtained = padint.Read();
+                Console.WriteLine("Reading value from padint 1 (should be " + value1 + ")...");
+                obtained = padint1.Read();
                 Console.WriteLine("Obtained: " + obtained);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
             catch (System.Runtime.Remoting.RemotingException) { }
 
-            Console.WriteLine("Status, register a new server and press any key to continue...");
+
+            Console.WriteLine("Status, notice how the objects and replicas moved and press any key to abort...");
             PadiDstm.Status();
             Console.ReadLine();
 
-            Console.WriteLine("Status, notice how the objects and replicas moved and press any key to continue...");
-            PadiDstm.Status();
-            Console.ReadLine();
-
-            Console.WriteLine("Reading value (should be " + value4 + ")...");
-            obtained = padint.Read();
-            Console.WriteLine("Obtained: " + obtained);
-
-            Console.WriteLine("Writing value " + value5 + "...");
-            padint.Write(value5);
-
-            Console.WriteLine("Committing...");
-            PadiDstm.TxCommit();
+            Console.WriteLine("Aborting...");
+            PadiDstm.TxAbort();
 
             Console.WriteLine("Status, press any key to finish the test...");
             PadiDstm.Status();
@@ -142,7 +111,7 @@ namespace TestsServerFailWithThree
 
         static void Main()
         {
-            FailTestsWithThree test = new FailTestsWithThree();
+            FailTestsCoord test = new FailTestsCoord();
             Console.WriteLine("Press any key to start the test(s)");
             Console.ReadLine();
 

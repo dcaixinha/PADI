@@ -38,16 +38,19 @@ namespace PADI_DSTM
         void Abort(int txId);
         ServerPackage GiveMeMyObjects();
         void SetReplicas(List<PadIntInsider> replicas);
-        void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend);
+        void UpdateReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend, SortedDictionary<int, List<int>> txCreatedObjListToSend);
         void UpdateNetworkAfterCrash(string crashedServerAddrPort);
-        List<PadIntInsider> GiveMeYourReplicas();
+        ReplicaPackage GiveMeYourReplicas();
         void CommitReplicas(int txId);
         void AbortReplicas(int txId);
+        void SetCoordReplicationInfo(SortedDictionary<int, List<int>> txObjCoordListToSend, SortedDictionary<string, int> clientsToSend);
+        void SetTxObjReplicationInfo(SortedDictionary<int, List<int>> txObjListReceived, SortedDictionary<int, List<int>> txCreatedObjListReceived);
     }
 
     public interface IServerMaster
     { 
         void printSelfStatus();
+        void UpdateNetworkAfterCrash(string crashedServerAddrPort);
     }
 
     public interface IMasterServer
@@ -61,7 +64,7 @@ namespace PADI_DSTM
     public interface IMasterClient
     {
         string BootstrapClient(string addrPort);
-
+        string MyCoordinatorFailed(string clientAddrPort, string failedServerAddrPort);
         void Status();
     }
 

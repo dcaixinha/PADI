@@ -14,6 +14,7 @@ namespace PADI_DSTM
         public static IServerClient serverObj; //inicializado na resposta ao bootstrap
         public static IMasterClient masterObj; //inicializado durante o bootstrap. Usado para os fails, freezes, etc.
         public static string masterAddrPort = "localhost:8086";
+        public static string serverAddrPort;
         static string address = DstmUtil.LocalIPAddress();
         static string porto = getRandomPort();
         static string myself = address + ":" + porto;
@@ -58,7 +59,7 @@ namespace PADI_DSTM
                 masterObj = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
                     "tcp://" + PadiDstm.masterAddrPort + "/Master");
 
-                string serverAddrPort = masterObj.BootstrapClient(myself);
+                serverAddrPort = masterObj.BootstrapClient(myself);
                 serverObj = (IServerClient)Activator.GetObject(
                     typeof(IServerClient),
                     "tcp://" + serverAddrPort + "/Server");
@@ -98,7 +99,13 @@ namespace PADI_DSTM
             }
             catch (RemotingException) //coordenador em baixo
             {
-                throw new TxException("Falhou a tentar começar uma Tx!");
+                //Avisar o master que o coordenador falhou para lhe ser atribuido um novo coordenador
+                //O novo coordenador terá toda a informacao necessaria para continuar a tx deste cliente,
+                //portanto resta no fim, repetir o pedido ao novo coordenador
+                UpdateCoordinator();
+
+                bool result = serverObj.TxBegin(myself);
+                return result;
             }
         }
 
@@ -108,13 +115,22 @@ namespace PADI_DSTM
             try
             {
                 PadInt result = serverObj.CreatePadInt(myself, uid);
+                result.SetMasterObj(masterAddrPort); //Intercept the padint proxy to give it the masterObj
+                PadInt.SetCoordinator(result.GetCoordinatorForInterception());
                 return result;
             }
             catch (TxException) { throw; }
             catch (RemotingException) //coordenador em baixo
             {
-                //TODO avisar o master para mandar abortar as tx q o servidor q caiu tinha
-                throw new TxException("Falhou ao tentar criar um padint!");
+                //Avisar o master que o coordenador falhou para lhe ser atribuido um novo coordenador
+                //O novo coordenador terá toda a informacao necessaria para continuar a tx deste cliente,
+                //portanto resta no fim, repetir o pedido ao novo coordenador
+                UpdateCoordinator();
+                
+                PadInt result = serverObj.CreatePadInt(myself, uid);
+                result.SetMasterObj(masterAddrPort); //Intercept the padint proxy to give it the masterObj
+                PadInt.SetCoordinator(result.GetCoordinatorForInterception());
+                return result;
             }
 
         }
@@ -125,13 +141,22 @@ namespace PADI_DSTM
             try
             {
                 PadInt result = serverObj.AccessPadInt(myself, uid);
+                result.SetMasterObj(masterAddrPort); //Intercept the padint proxy to give it the masterObj
+                PadInt.SetCoordinator(result.GetCoordinatorForInterception());
                 return result;
             }
             catch (TxException) { throw; }
             catch (RemotingException) //coordenador em baixo
             {
-                //TODO avisar o master para mandar abortar as tx q o servidor q caiu tinha
-                throw new TxException("Falhou ao tentar aceder o padint " + uid);
+                //Avisar o master que o coordenador falhou para lhe ser atribuido um novo coordenador
+                //O novo coordenador terá toda a informacao necessaria para continuar a tx deste cliente,
+                //portanto resta no fim, repetir o pedido ao novo coordenador
+                UpdateCoordinator();
+
+                PadInt result = serverObj.AccessPadInt(myself, uid);
+                result.SetMasterObj(masterAddrPort); //Intercept the padint proxy to give it the masterObj
+                PadInt.SetCoordinator(result.GetCoordinatorForInterception());
+                return result;
             }
         }
 
@@ -143,6 +168,16 @@ namespace PADI_DSTM
                 return result;
             }
             catch (TxException) { throw; }
+            catch (RemotingException) //coordenador em baixo
+            {
+                //Avisar o master que o coordenador falhou para lhe ser atribuido um novo coordenador
+                //O novo coordenador terá toda a informacao necessaria para continuar a tx deste cliente,
+                //portanto resta no fim, repetir o pedido ao novo coordenador
+                UpdateCoordinator();
+
+                bool result = serverObj.TxCommit(myself);
+                return result;
+            }
         }
 
         public static bool TxAbort()
@@ -152,7 +187,16 @@ namespace PADI_DSTM
                 bool result = serverObj.TxAbort(myself);
                 return result;
             }
-            catch (TxException) { throw; }
+            catch (RemotingException) //coordenador em baixo
+            {
+                //Avisar o master que o coordenador falhou para lhe ser atribuido um novo coordenador
+                //O novo coordenador terá toda a informacao necessaria para continuar a tx deste cliente,
+                //portanto resta no fim, repetir o pedido ao novo coordenador
+                UpdateCoordinator();
+
+                bool result = serverObj.TxAbort(myself);
+                return result;
+            }
         }
 
         public static bool Status()
@@ -230,6 +274,17 @@ namespace PADI_DSTM
                 }
                 else throw;
             }
+        }
+
+        //Internal method
+        private static void UpdateCoordinator()
+        {
+            string oldServer = serverAddrPort;
+
+            serverAddrPort = masterObj.MyCoordinatorFailed(myself, oldServer);
+            serverObj = (IServerClient)Activator.GetObject(
+                typeof(IServerClient),
+                "tcp://" + serverAddrPort + "/Server");
         }
 
         static void Main()

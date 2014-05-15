@@ -13,7 +13,7 @@ namespace TestsServerFailWithTwo
     {
         public void testFail()
         {
-            Console.WriteLine("testEntry");
+            Console.WriteLine("testFail");
 
             Console.WriteLine("Register 2 servers and press any key...");
             Console.ReadLine();
@@ -88,7 +88,6 @@ namespace TestsServerFailWithTwo
                 Console.WriteLine("Obtained: " + obtained);
             }
             catch (TxException e) { Console.WriteLine(e.reason); }
-            catch (System.Runtime.Remoting.RemotingException){ }
 
             Console.WriteLine("Status, press any key to finish the test...");
             PadiDstm.Status();
@@ -101,7 +100,6 @@ namespace TestsServerFailWithTwo
         static void Main()
         {
             FailTestsWithTwo test = new FailTestsWithTwo();
-            Console.WriteLine("Register the server first...");
             Console.WriteLine("Press any key to start the test(s)");
             Console.ReadLine();
 

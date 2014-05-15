@@ -47,6 +47,41 @@ namespace PADI_DSTM
             return replica;
         }
 
+        public static SortedDictionary<int, List<int>> GetCoordListReplicaFrom(SortedDictionary<int, List<int>> txObjCoordList)
+        {
+            SortedDictionary<int, List<int>> txObjCoordListToSend = new SortedDictionary<int, List<int>>();
+            foreach(int txId in txObjCoordList.Keys){
+                txObjCoordListToSend[txId] = new List<int>();
+                foreach (int objectId in txObjCoordList[txId])
+                {
+                    txObjCoordListToSend[txId].Add(objectId);
+                }
+            }
+            return txObjCoordListToSend;
+        }
+
+        public static SortedDictionary<string, int> GetClientListReplicaFrom(SortedDictionary<string, int> clients)
+        {
+            SortedDictionary<string, int> clientsListToSend = new SortedDictionary<string, int>();
+            foreach (string clientAddrPort in clients.Keys)
+            {
+                clientsListToSend[clientAddrPort] = clients[clientAddrPort];
+            }
+            return clientsListToSend;
+        }
+
+        public static SortedDictionary<int, List<int>> GetTxObjReplicaFrom(SortedDictionary<int, List<int>> txObjList)
+        {
+            SortedDictionary<int, List<int>> txObjListReplica = new SortedDictionary<int, List<int>>();
+            foreach(int txId in txObjList.Keys){
+                txObjListReplica[txId] = new List<int>();
+                foreach(int uid in txObjList[txId]){
+                    txObjListReplica[txId].Add(uid);
+                }
+            }
+            return txObjListReplica;
+        }
+
         //Returns null if no elements, or if theres only one element
         //beginInterval eh o de quem procura
         public static string GetNextServer(int beginInterval, SortedDictionary<int, ServerInfo> servers)
@@ -273,8 +308,14 @@ namespace PADI_DSTM
             int hashedUid = HashMe(uid);
             foreach (KeyValuePair<int, ServerInfo> serverEntry in servers)
             {
-                if (serverEntry.Value.getBegin() <= hashedUid && 
+                if (serverEntry.Value.getBegin() <= hashedUid && //if begin < end its a usual interval
                         serverEntry.Value.getEnd() >= hashedUid) //intervalo eh [ , ] -> o fim conta
+                {
+                    return serverEntry.Value.getPortAddress();
+                }
+                //if begin > end its one of those "loop" intervals so we can check the beginning or the end
+                else if (serverEntry.Value.getBegin() > serverEntry.Value.getEnd() && 
+                    (serverEntry.Value.getBegin() <= hashedUid || serverEntry.Value.getEnd() >= hashedUid))
                 {
                     return serverEntry.Value.getPortAddress();
                 }
@@ -320,9 +361,9 @@ namespace PADI_DSTM
                 Console.WriteLine("Empty!");
         }
 
-        public static void ShowClientsList(SortedDictionary<string, int> clients)
+        public static void ShowClientsList(SortedDictionary<string, int> clients, string description)
         {
-            Console.WriteLine("=== Clients List (Coordinator) ===");
+            Console.WriteLine("=== " + description + " ===");
             if (clients.Count > 0)
             {
                 Console.WriteLine("Client | TxId");
@@ -336,9 +377,9 @@ namespace PADI_DSTM
         }
 
         //Shows which servers are involved in which txs at this coordinator
-        public static void ShowTxServersList(SortedDictionary<int, List<int>> txObjCoordList, SortedDictionary<int, ServerInfo> servers)
+        public static void ShowTxServersList(SortedDictionary<int, List<int>> txObjCoordList, SortedDictionary<int, ServerInfo> servers, string description)
         {
-            Console.WriteLine("=== Tx-Servers List (Coordinator) ===");
+            Console.WriteLine("=== " + description + " ===");
             if (txObjCoordList.Count > 0)
             {
                 Console.WriteLine("txId : server_1 server_2 ...");
@@ -420,13 +461,38 @@ namespace PADI_DSTM
             else
             {
                 foreach (PadIntInsider padint in replicatedPadInts.Values)
-                    Console.WriteLine("Uid: " + padint.UID + ", commited write: " + padint.COMMITWRITE);
+                {
+                    Console.WriteLine("--REPLICA--");
+                    Console.WriteLine("Uid: " + padint.UID);
+                    Console.WriteLine("HashedUid: " + DstmUtil.HashMe(padint.UID));
+                    Console.WriteLine("Committed read (txid): " + padint.COMMITREAD);
+                    Console.WriteLine("Committed write (txid - value): " + padint.COMMITWRITE.Item1 + " - " + padint.COMMITWRITE.Item2);
+                    Console.WriteLine("Tentative reads (txid list): ");
+                    foreach (int txid in padint.TENTREADS)
+                    {
+                        Console.Write(txid + " ");
+                    }
+                    if (padint.TENTREADS.Count > 0)
+                        Console.Write("\r\n");
+                    else
+                        Console.WriteLine("Empty!");
+                    Console.WriteLine("Tentative writes (txid - value list): ");
+                    foreach (KeyValuePair<int, int> kvp in padint.TENTWRITES)
+                    {
+                        Console.Write(kvp.Key + " - " + kvp.Value + "  ");
+                    }
+                    if (padint.TENTWRITES.Count > 0)
+                        Console.Write("\r\n");
+                    else
+                        Console.WriteLine("Empty!");
+                    Console.WriteLine("----------");
+                }
             }
         }
 
-        public static void ShowTxObjectsList(SortedDictionary<int, List<int>> txObjList)
+        public static void ShowTxObjectsList(SortedDictionary<int, List<int>> txObjList, string description)
         {
-            Console.WriteLine("=== Tx-Object List (Responsible) ===");
+            Console.WriteLine("=== " + description + " ===");
             if (txObjList.Keys.Count > 0)
             {
                 Console.WriteLine("txId : uid_1 uid_2 ...");
@@ -442,9 +508,9 @@ namespace PADI_DSTM
                 Console.WriteLine("Empty!");
         }
 
-        public static void ShowTxCreatedObjectsList(SortedDictionary<int, List<int>> txCreatedObjList)
+        public static void ShowTxCreatedObjectsList(SortedDictionary<int, List<int>> txCreatedObjList, string description)
         {
-            Console.WriteLine("=== Tx-Created Object List (Responsible) ===");
+            Console.WriteLine("=== " + description + " ===");
             if (txCreatedObjList.Keys.Count > 0)
             {
                 Console.WriteLine("txId : uid_1 uid_2 ...");
