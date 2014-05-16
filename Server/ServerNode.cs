@@ -1048,7 +1048,7 @@ namespace Server {
                     replicasToSend.Add(DstmUtil.GetPadintFullReplicaFrom(padint));
                 }
                 //Envia a lista de replicas (com este padint apenas) para o servidor seguinte
-                SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend); //TODO ver este null eh createdObj la em cima $$$$$$
+                SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
                 return result;
             }
             else
