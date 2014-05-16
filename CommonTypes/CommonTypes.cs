@@ -59,6 +59,7 @@ namespace PADI_DSTM
         int getTxId();
         Boolean DetectedCrash(string crashedServerAddrPort);
         string GetNextToCrashed(string crashedAddrPort);
+        void Status();//Para o ultimo teste do mayFail
     }
 
     public interface IMasterClient

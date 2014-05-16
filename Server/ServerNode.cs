@@ -730,6 +730,7 @@ namespace Server {
             numWaitingResponse = serverList.Count;
             bool canCommit = false;
             bool result;
+            string serverFailed = ""; //used if a server fails
             //Envio dos canCommits
             foreach (string server in serverList)
             {
@@ -746,6 +747,7 @@ namespace Server {
                     {
                         StartRecoveryChain(server);
                         canCommit = false;
+                        serverFailed = server;
                         //If one server fails and cannot answer canCommit, this tx will have to abort
                         //because its during the canCommit that it will send replicas with tentative versions
                         //to its next server
@@ -780,19 +782,19 @@ namespace Server {
                         //Server failure detection
                         catch (System.Runtime.Remoting.RemotingException)
                         {
-                            StartRecoveryChain(server);
-                            //Contacta o master para obter o servidor a seguir ao que falhou. Isto garante
-                            //que mesmo que eu ja tenha sido actualizado pelo primeiro que detectou a falha,
-                            //tenho o servidor seguinte ao que crashou correcto.
-                            IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
-                                "tcp://" + ServerNode.masterAddrPort + "/Master");
-                            string serverNextToFailed = master.GetNextToCrashed(server);
+                            string serverNextToFailed;
+                            lock (serverLock)
+                            {
+                                serverNextToFailed = DstmUtil.GetNextServer(server, servers);
+                            }
                             //Se algum foi abaixo antes de poder ser commitado, 
                             //eh preciso enviar a ordem de commit ao novo servidor responsavel,
                             //ou seja ao seu next antigo onde estao as replicas enviadas durante o canCommit...
                             IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                                 "tcp://" + serverNextToFailed + "/Server");
                             serv.CommitReplicas(txId);
+
+                            StartRecoveryChain(server);
                         }
                     }
                     else Commit(txId); //O proprio faz commit se pertencer a esta lista de responsaveis
@@ -802,35 +804,19 @@ namespace Server {
             //Caso contrario: Envio de aborts a todos
             else
             {
+                serverList.Remove(serverFailed);
                 foreach (string server in serverList)
                 {
-                    try
+                    Console.WriteLine("Making server abort: " + server);
+                    if (!server.Equals(myself))
                     {
-                        if (!server.Equals(myself))
-                        {
-                            IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                                "tcp://" + server + "/Server");
-                            serv.Abort(txId);
-                        }
-                        else Abort(txId); //O proprio faz abort se pertencer a esta lista de responsaveis
-                    }
-                    //Server failure detection
-                    catch (System.Runtime.Remoting.RemotingException){
-                        StartRecoveryChain(server);
-                        //Contacta o master para obter o servidor a seguir ao que falhou. Isto garante
-                        //que mesmo que eu ja tenha sido actualizado pelo primeiro que detectou a falha,
-                        //tenho o servidor seguinte ao que crashou correcto.
-                        IMasterServer master = (IMasterServer)Activator.GetObject(typeof(IMasterServer),
-                            "tcp://" + ServerNode.masterAddrPort + "/Master");
-                        string serverNextToFailed = master.GetNextToCrashed(server);
-                        //Se algum foi abaixo antes de poder ser abortado, 
-                        //eh preciso enviar a ordem de abort ao novo servidor responsavel,
-                        //ou seja ao seu next antigo para limpar as tentative versions das replicas...
                         IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
-                            "tcp://" + serverNextToFailed + "/Server");
-                        serv.AbortReplicas(txId);
-                    } 
+                            "tcp://" + server + "/Server");
+                        serv.Abort(txId);
+                    }
+                    else Abort(txId); //O proprio faz abort se pertencer a esta lista de responsaveis
                 }
+
                 result = false;
             }
             lock (txLock)
@@ -1149,11 +1135,12 @@ namespace Server {
         }
 
         //Server-Server
-        //TODO Aqui no fim do canCommit envia para o seu next, replicas dos padints envolvidos nesta tx, 
+        //Aqui no fim do canCommit envia para o seu next, replicas dos padints envolvidos nesta tx, 
         //juntamente a entrada na tabela tx-objs referente a esta tx
         public bool CanCommit(int txId)
         {
             threadSafeStateCheck();
+            //IMayFailHere();
 
             Boolean isWaiting;
             lock (txLock)
@@ -1219,6 +1206,7 @@ namespace Server {
         public void Commit(int txId)
         {
             threadSafeStateCheck();
+            //IMayFailHere();
 
             Boolean isWaiting;
             lock (txLock)
@@ -1382,6 +1370,8 @@ namespace Server {
         }
 
         //Server-Server
+        //Metodo chamado quando a detecao de que um servidor falhou eh feita ao chamar o commit sobre esse servidor,
+        //este metodo eh invocado no servidor seguinte ao que falhou para commitar as replicas do que falhou.
         public void CommitReplicas(int txId)
         {
             threadSafeStateCheck();
@@ -1450,10 +1440,12 @@ namespace Server {
         }
 
         //Server-Server
+        //Metodo chamado quando a detecao de que um servidor falhou eh feita ao chamar o abort sobre esse servidor,
+        //este metodo eh invocado no servidor seguinte ao que falhou para abortar as replicas do que falhou.
         public void AbortReplicas(int txId)
         {
             threadSafeStateCheck();
-
+            //Console.WriteLine("Aborting replicas on " + myself);
             Boolean isWaiting;
             lock (txLock)
             {
@@ -2108,6 +2100,17 @@ namespace Server {
                 DstmUtil.ShowTxObjectsList(txReplicatedObjList, "Replicated tx-Object List");
                 DstmUtil.ShowTxCreatedObjectsList(txCreatedObjList, "Tx-Created Object List (Responsible)");
                 DstmUtil.ShowTxCreatedObjectsList(txReplicatedCreatedObjList, "Replicated tx-Created Object List");
+            }
+        }
+
+        //Metodo para teste
+        //Obriga o 3o servidor a falhar quando este metodo eh chamado
+        private void IMayFailHere()
+        {
+            if (myself.EndsWith("2003"))
+            {
+                Fail();
+                throw new RemotingException();
             }
         }
 

@@ -32,6 +32,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailCoordinatorC
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerFailCoordinatorAbort", "TestsFailCoordinatorAbort\TestsServerFailCoordinatorAbort.csproj", "{11C35A74-E136-4694-8369-0208391B9CB0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestsServerMayFail", "TestsServerMayFail\TestsServerMayFail.csproj", "{563A3688-3161-4E4D-B9C5-BD94F11490D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -98,6 +100,10 @@ Global
 		{11C35A74-E136-4694-8369-0208391B9CB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{11C35A74-E136-4694-8369-0208391B9CB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{11C35A74-E136-4694-8369-0208391B9CB0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{563A3688-3161-4E4D-B9C5-BD94F11490D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{563A3688-3161-4E4D-B9C5-BD94F11490D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{563A3688-3161-4E4D-B9C5-BD94F11490D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{563A3688-3161-4E4D-B9C5-BD94F11490D5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
