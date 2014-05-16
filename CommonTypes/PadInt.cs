@@ -10,7 +10,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 
 namespace PADI_DSTM
 {
-    //Classe proxy que faz a interaçao entre o client e o coordenador
+    //Classe proxy que faz a interacao entre o client e o coordenador
     [Serializable]
     public class PadInt
     {
@@ -42,7 +42,8 @@ namespace PADI_DSTM
             return PadInt.coordinatorAddressPort;
         }
 
-        //Used by the library client so that read and write operations inside padint can contact the master
+        //Usado pela PadiDstm para que as operacoes de read e write dentro do padint possam contactar com o master
+        //quando necessario (quando recebem um remoting exception)
         public void SetMasterObj(string master){
             this.master = master;
             masterObj = (IMasterClient)Activator.GetObject(typeof(IMasterClient),
@@ -50,11 +51,11 @@ namespace PADI_DSTM
         }
 
         //Metodos usados pelo cliente:
-        // Reads the object in the context of the current transaction. Returns the value
-        // of the object. This method may throw a TxException.
+        // Le o objecto no contexto da tx actual. Devolve o valor do objecto.
+        // Este metodo pode lancar uma TxException.
         public int Read()
         {
-            //TODO faz 1 pedido de read ao coord
+            //Faz 1 pedido de read ao coord
             try
             {
                 IServerClient serv = (IServerClient)Activator.GetObject(typeof(IServerClient),
@@ -75,11 +76,11 @@ namespace PADI_DSTM
             }
         }
 
-        // Writes the object in the context of the current transaction. This
-        // method may throw a TxException.
+        // Escreve o valor no objecto, no contexto da tx actual.
+        // Este metodo pode lancar uma TxException.
         public void Write(int value)
         {
-            //TODO faz 1 pedido de read ao coord
+            //Faz 1 pedido de write ao coord
             try
             {
                 IServerClient serv = (IServerClient)Activator.GetObject(typeof(IServerClient),

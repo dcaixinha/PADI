@@ -7,8 +7,10 @@ using System.Net.Sockets;
 
 namespace PADI_DSTM
 {
+    //Classe utilitaria
     public static class DstmUtil
     {
+        //Devolve o endereco IPV4 da maquina onde esta a correr
         public static string LocalIPAddress()
         {
             IPHostEntry host;
@@ -25,7 +27,7 @@ namespace PADI_DSTM
             return localIP;
         }
 
-        //Returns a FULL replica of the current padint, used on can commit
+        //Devolve uma replica do padint que recebe como argumento
         public static PadIntInsider GetPadintFullReplicaFrom(PadIntInsider padint)
         {
             int uid = padint.UID;
@@ -37,16 +39,7 @@ namespace PADI_DSTM
             return replica;
         }
 
-        //Returns a replica of the current padint (committed values only), used on commit
-        public static PadIntInsider GetPadintReplicaFrom(PadIntInsider padint)
-        {
-            int uid = padint.UID;
-            PadIntInsider replica = new PadIntInsider(uid);
-            replica.COMMITREAD = padint.COMMITREAD;
-            replica.COMMITWRITE = padint.COMMITWRITE;
-            return replica;
-        }
-
+        //Devolve uma replica do txObjCoordList que recebe como argumento  (para replicar a info do coord)
         public static SortedDictionary<int, List<int>> GetCoordListReplicaFrom(SortedDictionary<int, List<int>> txObjCoordList)
         {
             SortedDictionary<int, List<int>> txObjCoordListToSend = new SortedDictionary<int, List<int>>();
@@ -60,6 +53,7 @@ namespace PADI_DSTM
             return txObjCoordListToSend;
         }
 
+        //Devolve uma replica da tabela de clientes que recebe como argumento (tambem para replicar a info do coord)
         public static SortedDictionary<string, int> GetClientListReplicaFrom(SortedDictionary<string, int> clients)
         {
             SortedDictionary<string, int> clientsListToSend = new SortedDictionary<string, int>();
@@ -70,6 +64,7 @@ namespace PADI_DSTM
             return clientsListToSend;
         }
 
+        //Devolve uma replica da tabela de txObjList que recebe como argumento
         public static SortedDictionary<int, List<int>> GetTxObjReplicaFrom(SortedDictionary<int, List<int>> txObjList)
         {
             SortedDictionary<int, List<int>> txObjListReplica = new SortedDictionary<int, List<int>>();
@@ -82,7 +77,7 @@ namespace PADI_DSTM
             return txObjListReplica;
         }
 
-        //Returns null if no elements, or if theres only one element
+        //Devolve null se nao existirem elementos, ou se houver apenas um;
         //beginInterval eh o de quem procura
         public static string GetNextServer(int beginInterval, SortedDictionary<int, ServerInfo> servers)
         {
@@ -109,7 +104,7 @@ namespace PADI_DSTM
         }
 
         //Method override
-        //Returns null if no elements, or if theres only one element
+        //Igual ao anterior so que recebe o addrPort do servidor do qual queremos descobrir o next
         //Returns the next element from serverAddrPort
         public static string GetNextServer(string serverAddrPort, SortedDictionary<int, ServerInfo> servers)
         {
@@ -135,7 +130,7 @@ namespace PADI_DSTM
             else return null;
         }
 
-        //Returns null if no elements, or if theres only one element
+        //Devolve null se nao existirem elementos, ou se houver apenas um;
         //beginInterval eh o de quem procura
         public static string GetPreviousServer(int beginInterval, SortedDictionary<int, ServerInfo> servers)
         {
@@ -288,7 +283,7 @@ namespace PADI_DSTM
         }
 
         //Used by: Servers, Master
-        //Checks whether or not a addrPort is already registered in any ServerInfo object inside the servers dictionary
+        //Verifica se o addrPort esta nalgum ServerInfo dentro do dicionario de servers
         public static bool ServerInfoContains(SortedDictionary<int, ServerInfo> servers, string addrPort)
         {
             int count = 0;
@@ -313,7 +308,7 @@ namespace PADI_DSTM
                 {
                     return serverEntry.Value.getPortAddress();
                 }
-                //if begin > end its one of those "loop" intervals so we can check the beginning or the end
+                //if begin > end its one of those "loop" intervals so we can check the beginning OR the end
                 else if (serverEntry.Value.getBegin() > serverEntry.Value.getEnd() && 
                     (serverEntry.Value.getBegin() <= hashedUid || serverEntry.Value.getEnd() >= hashedUid))
                 {
@@ -323,7 +318,7 @@ namespace PADI_DSTM
             return null; //Nunca deve acontecer!
         }
 
-        //Uses an implementation of Murmur hashing
+        //Implementacao do Murmur hashing
         public static int HashMe(int num)
         {
             Murmur3 m = new Murmur3();
@@ -331,8 +326,8 @@ namespace PADI_DSTM
                                 GetBytes((ulong)num)), 0));
         }
 
-        //Used by coordinator servers, which have a map of tx-objects (coordinator) to find which servers to contact
-        //for commit, abort
+        //Usado pelos coordenadores, que tem um mapa de tx-objects (coordinator) para encontrar que servidores
+        //tem de contactar para commit, abort
         public static List<string> GetInvolvedServersList(SortedDictionary<int, ServerInfo> servers, List<int> objectIds)
         {
             List<string> serverList = new List<string>();

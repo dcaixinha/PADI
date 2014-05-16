@@ -33,7 +33,7 @@ namespace Master {
         private int txIdCounter = 0;
         private Dictionary<string, string> crashedServers = new Dictionary<string, string>(); //crashed addrPort, nextToCrashed (for commits/aborts)
 
-        private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (beginning of the interval), "192.12.51.42:4004" >
+        private SortedDictionary<int, ServerInfo> servers = new SortedDictionary<int, ServerInfo>(); // ex: < (inicio do intervalo), "192.12.51.42:4004" >
 
         //Locks
         private Object serversLock = new Object();
@@ -84,7 +84,7 @@ namespace Master {
             }
         }
 
-        //Returns true if this is the first time this server crash was detected
+        //Retorna true se eh a primeira vez que o crash deste servidor eh detectado
         public Boolean DetectedCrash(string crashedServerAddrPort)
         {
             Boolean alreadyDetectedCrash;
@@ -146,13 +146,15 @@ namespace Master {
                     serv.UpdateNetworkAfterCrash(failedServerAddrPort);
                 }
             }
-            //TODO avisar o novo coord que tem 1 novo cliente
+            //Nao eh preciso avisar o novo coord que tem 1 novo cliente, porque ele ja vai ter essa informacao replicada
+            //e quando for notificado da saida do servidor que falhou, ele torna-se no novo coordenador das tx que o antigo
+            //coordenava
 
-            //Retornar o endereço do next ao cliente
+            //Retornar o endereço do next ao cliente (que sera o novo coordenador)
             return nextServer;
         }
 
-        //Client calls this to bootstrap himself and get a server
+        //Cliente chama este metodo para fazer bootstrap e ser-lhe atribuido um servidor coordenador
         public string BootstrapClient(string addrPort)
         {
             lock (roundRobinLock)
@@ -163,7 +165,7 @@ namespace Master {
             }
         }
 
-        //Client calls this to show status
+        //Cliente chama o status
         public void Status()
         {
             lock (StatusLock)

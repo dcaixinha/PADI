@@ -10,6 +10,8 @@ using System.Runtime.Serialization.Formatters.Binary;
 namespace PADI_DSTM
 {
     [Serializable]
+    //Esta eh a classe interna aos servidores, que representa e guarda informacao sobre os padints, como as tabelas
+    //das tentativas e committed, e o uid.
     public class PadIntInsider
     {
         private int uid;
@@ -18,8 +20,6 @@ namespace PADI_DSTM
         private Tuple<int, int> committedWrite; //txid, value
         private List<int> tentativeReads;
         private Dictionary<int, int> tentativeWrites; //txId, value
-        private int temporaryRead;
-        private Tuple<int, int> temporaryWrite;
 
 
         public PadIntInsider(int uid)
@@ -28,8 +28,6 @@ namespace PADI_DSTM
             committedWrite = new Tuple<int, int>(0,0); 
             tentativeReads = new List<int>();
             tentativeWrites = new Dictionary<int, int>();
-            temporaryRead = -1;
-            temporaryWrite = null;
             this.uid = uid;
         }
 
@@ -164,58 +162,37 @@ namespace PADI_DSTM
         }
 
         //Verifica se eh a tx com o id mais baixo, se nao for tem que esperar pelas outras
-        //TODO: Temporary values can be removed, if we don't move the code back up to canCommit
         public int Commit(int txId)
         {
             //Esperar até poder mesmo fazer commit
             int dSelected = GetMaxValueLowerThan(txId);
-            //if there's no tentative writes lower than us
+            //se nao houver tentative writes menor
             if (dSelected > txId) //so se o meu tentative write for o mais baixo eh q faço commit, senao espero
             {
-                return -4;
+                return -4; //Quem recebe este valor saber que vai ter de esperar num ciclo e voltar a tentar o commit
             }
 
             if (tentativeReads.Contains(txId))
             {
-                //store temporarily the old committed value and the committed TxID
-                temporaryRead = committedRead;
-                //write the new value and TxID on the committed table
+                //escreve o novo valor e TxID na committed table
                 committedRead = tentativeReads.First(item => item == txId);
-                //Then remove the TxID from the tentative table
+                //Remove o TxID da tentative table
                 tentativeReads.Remove(txId);
             }
             if (tentativeWrites.ContainsKey(txId))
             {
-                //store temporarily the old committed value and the committed TxID
-                temporaryWrite = committedWrite;
-                //write the new value and TxID on the committed table
+                //escreve o novo valor e TxID na committed table
                 KeyValuePair<int, int> novo = tentativeWrites.First(item => item.Key == txId);
                 committedWrite = new Tuple<int, int>(novo.Key, novo.Value);
-                //Then remove the TxID from the tentative table
+                //Remove o TxID da tentative table
                 tentativeWrites.Remove(txId);
             }
-
-            //the temporary values can be discarded, and that's it
-            temporaryWrite = null;
-            temporaryRead = -1;
 
             return 1;
         }
 
         public void Abort(int txId)
         {
-            //since that TxID was already removed from the tentatives table,
-            //all that's left to do is rewrite the temporary values back as committed
-            if (temporaryWrite != null)
-            {
-                committedWrite = temporaryWrite;
-                temporaryWrite = null;
-            }
-            if (temporaryRead != -1)
-            {
-                committedRead = temporaryRead;
-                temporaryRead = -1;
-            }
             //verifica as tabelas de tentative reads e writes e apaga de la esta txId se existir
             if (tentativeReads.Contains(txId))
                 tentativeReads.Remove(txId);

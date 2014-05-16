@@ -139,14 +139,14 @@ namespace Server {
         private State currentState = State.Normal;
 
         //Locks
-        private Object stateLock = new Object(); //protects the state
-        private Object serverLock = new Object(); //this lock protects access to clients and servers tables
-        private Object txLock = new Object(); //protects all tx tables (and padints -> not anymore)
+        private Object stateLock = new Object(); //protege o estado
+        private Object serverLock = new Object(); //protege acesso as tabelas de clients and servers
+        private Object txLock = new Object(); //protege as tx tables
         private ReaderWriterLockSlim padintsLock = new ReaderWriterLockSlim();
-        private Dictionary<int, Object> padintLocks = new Dictionary<int, Object>(); //this will be protected by txLock
+        private Dictionary<int, Object> padintLocks = new Dictionary<int, Object>(); //protegido pela padintsLock
 
         private ReaderWriterLockSlim replicasLock = new ReaderWriterLockSlim();
-        private Dictionary<int, Object> replicaLocks = new Dictionary<int, Object>(); //this will be protected by txLock
+        private Dictionary<int, Object> replicaLocks = new Dictionary<int, Object>(); //protegido pela replicasLock
 
         private Boolean waitingForObjects = true;
         //Enquanto este waiting tiver a false, lanca phantomException nos metodos que sao chamados entre
@@ -160,7 +160,7 @@ namespace Server {
         public string GetAddress() { return myself; }
 
 
-        //ServerNode updates this object after successful registration with master
+        //ServerNode faz update a este objecto depois do registo com sucesso no master
         public void UpdateServerList(string serverAddrPort, MasterPackage masterPack)
         {
             List<ServerInfo> serversInfo;
@@ -172,7 +172,7 @@ namespace Server {
                 this.myself = serverAddrPort;
                 serversInfo = servers.Values.ToList();
             }
-            //Notify all others of the update
+            //Notifica todos os outros do update
             foreach (ServerInfo sInfo in serversInfo)
             {
                 string server = sInfo.getPortAddress();
@@ -220,7 +220,7 @@ namespace Server {
                         {
                             myPadInts.Add(padint.UID, padint);
                         }
-                        //Create a lock for each padint received
+                        //Cria um lock por cada padint recebido
                         padintsLock.EnterWriteLock();
                         try
                         {
@@ -271,7 +271,6 @@ namespace Server {
                 SendCoordInfoToNext();
 
                 //Enviar para o seu next info sobre os seus tx-obj para que possam ser replicados
-                //&&&&&&&&&&&&&&&&&&&
                 SendTxObjInfoToNext();
             }
             lock (txLock)
@@ -281,7 +280,7 @@ namespace Server {
         }
 
         //Server-Server
-        //Other servers call this to change topology after node join
+        //Os outros servidores chamam este metodo para mudar a topologia da rede depois de um join
         public void UpdateNetwork(string serverAddrPort)
         {
             threadSafeStateCheck();
@@ -420,9 +419,8 @@ namespace Server {
                 //Envio replicas da minha informacao de coordenador ao seguinte
                 SendCoordInfoToNext();
                 //Enviar po meu next info sobre os meus txObj restantes para que ele possa replicar
-                //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
                 SendTxObjInfoToNext();
-                //Reset the send lists
+                //Faz reset as listas de send
                 objTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 objCreatedTxToSendDict = new Dictionary<int, int>(); //<uid, txid>
                 padintToSendList = new List<PadIntInsider>();
@@ -444,8 +442,8 @@ namespace Server {
         }
 
         //Server-Server
-        //Method called by the server who aglomerates on its new previous server. Besides the padint replicas
-        //this server will also send its tx-obj and tx-created obj lists to be replicated
+        //Metodo invocado pelo servidor que aglomera o previous server. Alem das replicas de padints
+        //este servidor tambem envia as listas tx-obj e tx-created obj para serem replicadas
         public ReplicaPackage GiveMeYourReplicas()
         {
             SortedDictionary<int, List<int>> txObjListReplica;
@@ -546,7 +544,6 @@ namespace Server {
             }
             //Envia para o seu next uma replica da lista de tx-obj que coordena E a tabela dos seus clientes
             SendCoordInfoToNext();
-            //DstmUtil.ShowTxServersList(txServersList);
             //Devolve um proxy ao cliente, com o qual o cliente vai comunicar com este servidor
             PadInt proxy = new PadInt(myself, clientAddressPort, uid);
             return proxy;
@@ -567,7 +564,7 @@ namespace Server {
                 if (!clients.ContainsKey(clientAddressPort)) throw new TxException("O cliente nao tem nenhuma Tx aberta!");
                 txId = clients[clientAddressPort];
 
-                //returns the portAddress of the server responsible for that uid
+                //devolve o portAddress do servidor responsavel pelo uid
                 responsible = DstmUtil.GetResponsibleServer(servers, uid);
             }
             if (responsible == null)
@@ -596,10 +593,6 @@ namespace Server {
             {
                 AccessPadInt(uid, txId);
             }
-            //Nao deve enviar a referencia remota do padint criado
-            //Deve criar 1 obejcto proxy local a este servidor, independentemente de ter sido este servidor
-            //o responsavel pelo padint ou outro qualquer! 
-            //Portanto, o coordenador fica com esta ref remota (uid), e envia um proxy ao cliente.
 
             lock (txLock)
             {
@@ -730,7 +723,7 @@ namespace Server {
             numWaitingResponse = serverList.Count;
             bool canCommit = false;
             bool result;
-            string serverFailed = ""; //used if a server fails
+            string serverFailed = ""; //usado se o servidor falhar
             //Envio dos canCommits
             foreach (string server in serverList)
             {
@@ -748,9 +741,7 @@ namespace Server {
                         StartRecoveryChain(server);
                         canCommit = false;
                         serverFailed = server;
-                        //If one server fails and cannot answer canCommit, this tx will have to abort
-                        //because its during the canCommit that it will send replicas with tentative versions
-                        //to its next server
+                        //Se um falhou antes do canCommit, a tx vai abortar
                     }
                     if (canCommit)
                         numWaitingResponse--;
@@ -1107,7 +1098,7 @@ namespace Server {
             Object padintLock;
             lock (txLock)
             {
-                //search for the padint
+                //procura pelo padint
                 hasPadInt = myPadInts.TryGetValue(uid, out padint);
             }
             padintsLock.EnterReadLock();
@@ -1161,7 +1152,7 @@ namespace Server {
             List<int> createdUids = new List<int>();
             lock (txLock)
             {
-                //get the objects used in this txId
+                //obtem os objectos usados nesta tx
                 uids = txObjList[txId];
                 if (txCreatedObjList.ContainsKey(txId))
                     createdUids = txCreatedObjList[txId];
@@ -1173,7 +1164,7 @@ namespace Server {
             txCreatedObjListToSend.Add(txId, createdUids);
             //Vai preencher a lista de padints envolvidos nesta tx para enviar para a replica
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
-            //for each of these objects:
+            //para cada um destes objectos:
             foreach (int uid in uids)
             {
                 Object padintLock;
@@ -1227,18 +1218,18 @@ namespace Server {
             List<int> uids;
             lock (txLock)
             {
-                //get the objects used in this txId
+                //obtem os objectos usados nesta tx
                 uids = txObjList[txId];
             }
             Object padintLock;
             PadIntInsider padint;
-            //Make replicas of the objects used in this Tx
+            //Faco replicas dos objectos usados nesta tx
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             foreach (int uid in uids)
             {
                 lock (txLock)
                 {
-                    //for each of these objects:
+                    //para cada um destes objectos
                     padint = myPadInts[uid];
                 }
                 padintsLock.EnterReadLock();
@@ -1307,15 +1298,15 @@ namespace Server {
             List<int> uids;
             lock (txLock)
             {
-                //get the objects used in this txId
+                //obtem os objectos usados nesta tx
                 uids = txObjList[txId];
             }
             Object padintLock;
-            //Make replicas of the objects used in this Tx
+            //Fazer replicas dos objectos usados nesta tx
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
             foreach (int uid in uids)
             {
-                //for each of these objects:
+                //para cada um destes objectos
                 PadIntInsider padint;
                 lock (txLock)
                 {
@@ -1338,10 +1329,10 @@ namespace Server {
                 }
             }
 
-            //If there are padints to be removed (and thus we need to propagate this information to the replicas,
-            //we fill the createdObjListToSend with the replicas that need to be destroyed. The decidion to destroy
-            //the replica is done by checking if the uid in the craetedObj is not on the objList, if its not then it
-            //is meant to be destroyed)
+            //Se houverem padints a serem removidos (e cuja informacao precisamos propagar ahs replicas,
+            //preenchemos a createdObjListToSend com as replicas que serao destruidas. A decisao para destruir
+            //eh feita fazendo o check se o uid na lista craetedObj nao estiver tambem na objList, entao
+            //esta replica sera destruida)
             SortedDictionary<int, List<int>> txCreatedObjListToSend = new SortedDictionary<int, List<int>>();
             txCreatedObjListToSend[txId] = new List<int>();
             lock (txLock)
@@ -1364,7 +1355,6 @@ namespace Server {
             //Limpar as replicas para esta tx (no seu next)
             SortedDictionary<int, List<int>> txObjListToSend = new SortedDictionary<int, List<int>>();
             txObjListToSend.Add(txId, null);
-            //txCreatedObjListToSend.Add(txId, null);
             //Envia a lista de replicas para o servidor seguinte (que eh responsavel pelas suas replicas)
             SendUpdatedReplicas(replicasToSend, txObjListToSend, txCreatedObjListToSend);
         }
@@ -1517,7 +1507,7 @@ namespace Server {
                 foreach(PadIntInsider replica in replicasToSend){
                     replicatedPadInts[replica.UID] = replica;
 
-                    //Creates the lock for this replica
+                    //Cria um lock para esta replica
                     replicasLock.EnterWriteLock();
                     try
                     {
@@ -1546,8 +1536,8 @@ namespace Server {
                         if (txObjListToSend != null)
                             txReplicatedCreatedObjList[kvp.Key] = kvp.Value; //can Commit (out read ou write)
                         List<int> uidsToEliminate = new List<int>();
-                        foreach(int uid in kvp.Value) //Abort: check which replicas need to be destroyed
-                        {                               //because their padint original was destroyed
+                        foreach(int uid in kvp.Value) //Abort: verificar se as replicas precisam ser destruidas
+                        {                               //porque o padint original tb foi destruido no decurso duma tx
                             //Se o txReplicatedObjList nao contem o elemento, eh pq eh para remover esse elemento
                             if (!txReplicatedObjList.ContainsKey(kvp.Key) || !txReplicatedObjList[kvp.Key].Contains(uid))
                                 uidsToEliminate.Add(uid);
@@ -1611,7 +1601,6 @@ namespace Server {
             //Console.WriteLine("new guy: '" + newServerResponsible + "' myself: '" + myself + "' #######################");
             if (newServerResponsible.Equals(myself))
             {
-                //Console.WriteLine("I AM THE SERVER RESPOSIBLE NOW!! ############################################");
                 List<PadIntInsider> replicas;
                 lock (txLock)
                 {
@@ -1638,7 +1627,7 @@ namespace Server {
                         padintsLock.ExitWriteLock();
                     }
                 }
-                //Passar o tx-obj e tx-createdObj que tava a replicar para efectivo ################################################################
+                //Passar o tx-obj e tx-createdObj que tava a replicar para efectivos
                 lock(txLock){
                     foreach(KeyValuePair<int, List<int>> kvp in txReplicatedObjList){
                         if (txObjList.ContainsKey(kvp.Key)){ //Se ja tem objectos nesta txId, acrescenta os novos 1 a 1
@@ -1691,8 +1680,8 @@ namespace Server {
         }
 
         //Server-Server
-        //This method is called everytime a previous server (which is a coordinator) is asked to create or access
-        //any padint
+        //Metodo chamado sempre que um previous server (que eh um coordinator) eh-lhe pedido um access ou create
+        //de um padint no espaco de enderecamento dele
         public void SetCoordReplicationInfo(SortedDictionary<int, List<int>> txObjCoordListReceived, SortedDictionary<string, int> clientsReceived)
         {
             lock (txLock)
@@ -1716,7 +1705,7 @@ namespace Server {
         }
 
         //Internal method - ALREADY LOCK PROTECTED!
-        //Makes replicas from myPadInts
+        //Cria replicas a partir dos myPadInts
         private List<PadIntInsider> MakeReplicas()
         {
             List<PadIntInsider> replicasToSend = new List<PadIntInsider>();
@@ -1731,7 +1720,7 @@ namespace Server {
         }
 
         //Internal method - LOCK PROTECTED
-        //Receives the addrPort of the failed server and starts the chain to remove this server from the network
+        //Recebe um addrPort do servidor que falhou e comeca a chain para remover esse servidor da rede
         private void StartRecoveryChain(string crashedServerAddrPort)
         {
             //Contacto o master a indicar que este servidor caiu, recebo como resposta do master
@@ -1757,7 +1746,7 @@ namespace Server {
                 {
                     serversInfo = servers.Values.ToList();
                 }
-                //Notify all others of the update
+                //Notifico os outros do update
                 foreach (ServerInfo sInfo in serversInfo)
                 {
                     string server = sInfo.getPortAddress();
@@ -1777,7 +1766,8 @@ namespace Server {
         }
 
         //Internal method - LOCK PROTECTED
-        //Sends a list of replicas to the next, which will reset its replica list and set this list as the new list.
+        //Envia uma lista de replicas para o next, que vai fazer reset ah sua lista de replicas
+        //e faz set desta lista como nova
         private void SendNewReplicas(List<PadIntInsider> replicasToSend)
         {
             int myBeginInterval;
@@ -1792,7 +1782,7 @@ namespace Server {
             }
             try
             {
-                if (nextServerAddrPort != null) //If i'm the only server, there's no point in sending replicas to myself
+                if (nextServerAddrPort != null) //Se eu sou o unico servidor, nao envio replicas para mim proprio
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + nextServerAddrPort + "/Server");
@@ -1803,7 +1793,7 @@ namespace Server {
         }
 
         //Internal Method - LOCK PROTECTED
-        //Sends a list of replicas to the next server, who will update the ones received
+        //Envia uma lista de replicas para o next, que vao fazer update a essas replicas
         private void SendUpdatedReplicas(List<PadIntInsider> replicasToSend, SortedDictionary<int, List<int>> txObjListToSend, SortedDictionary<int, List<int>> txCreatedObjListToSend)
         {
             int myBeginInterval;
@@ -1818,7 +1808,7 @@ namespace Server {
             }
             try
             {
-                if (nextServerAddrPort != null) //If i'm the only server, there's no point in sending replicas to myself
+                if (nextServerAddrPort != null) //Se eu sou o unico servidor, nao envio replicas para mim proprio
                 {
                     IServerServer serv = (IServerServer)Activator.GetObject(typeof(IServerServer),
                         "tcp://" + nextServerAddrPort + "/Server");
@@ -1829,7 +1819,7 @@ namespace Server {
         }
 
         //Internal method - LOCK PROTECTED
-        //Sends a replica of its coordinator lists to its next server
+        //Envia a info de coordenador para o seu next
         private void SendCoordInfoToNext()
         {
             string nextServer;
@@ -1839,7 +1829,6 @@ namespace Server {
             }
             if (nextServer != null)
             {
-                //Console.WriteLine("############ Next is: " + nextServer);
                 SortedDictionary<int, List<int>> txObjCoordListToSend;
                 lock (txLock)
                 {
@@ -1858,7 +1847,7 @@ namespace Server {
         }
 
         //Internal method - LOCK PROTECTED
-        //Sends a replica of its tx-obj info to its next server
+        //Envia uma replica da sua informcao de tx-obj para o seu next
         private void SendTxObjInfoToNext()
         {
             string nextServer;
@@ -1881,10 +1870,10 @@ namespace Server {
             }
         }
 
-        //Internal method -LOCK PROTECTED
-        //If the previous server, who crashed, was a coordinator, I now become the new coordinator
-        //for those txs and those clients. In the end I clear the replicated data structures after I
-        //pass those values to my effective tables.
+        //Metodo interno -LOCK PROTECTED
+        //Se o servidor anterior, que crashou, era um coordenador, eu passo agora a ser o novo coordenador
+        //para essas txs e clients. No fim limpo as estruturas de dados de replicacao depois de ter tornado
+        //os dados que eram replicados a efectivos.
         private void BecomeCoordinatorIfPreviousWas()
         {
             lock (txLock)
@@ -2104,7 +2093,7 @@ namespace Server {
         }
 
         //Metodo para teste
-        //Obriga o 3o servidor a falhar quando este metodo eh chamado
+        //Obriga o 3o servidor (porto 2003) a falhar quando este metodo eh chamado (ou no canCommit ou no commit)
         private void IMayFailHere()
         {
             if (myself.EndsWith("2003"))
